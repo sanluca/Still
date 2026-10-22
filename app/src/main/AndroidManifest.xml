@@ -2,6 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Permesso per attivare/disattivare la modalità Non Disturbare -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
+    <!-- Permesso WakeLock per mantenere attivo il processore a schermo spento durante la meditazione -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!-- Permessi ufficiali Android 14+ (System Health Connect) -->
     <uses-permission android:name="android.permission.health.WRITE_MINDFULNESS" />
     <uses-permission android:name="android.permission.health.READ_MINDFULNESS" />
@@ -44,6 +50,17 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity>
+
+        <!-- Servizio in background per ricevere i dati della meditazione dall'orologio Google Pixel Watch -->
+        <service
+            android:name=".WearListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/meditation_completed" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

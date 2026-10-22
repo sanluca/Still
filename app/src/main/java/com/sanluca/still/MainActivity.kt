@@ -1,6 +1,7 @@
 package com.sanluca.still
 
 import android.app.Activity
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
@@ -8,6 +9,9 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.os.SystemClock
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -24,18 +28,26 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,22 +60,30 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
+import com.google.android.gms.wearable.PutDataMapRequest
+import com.google.android.gms.wearable.Wearable
 import com.sanluca.still.ui.theme.StillTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
 import java.time.Duration
 import java.time.Instant
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import kotlin.math.exp
 import kotlin.math.sin
 
@@ -81,10 +101,21 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// --- FUNZIONI DI SALVATAGGIO DELLE IMPOSTAZIONI ---
+// --- FUNZIONI DI SALVATAGGIO DELLE IMPOSTAZIONI E STORICO ---
 private const val PREFS_NAME = "still_prefs"
 private const val KEY_SELECTED_TIME = "selected_time_seconds"
+private const val KEY_PREP_TIME = "prep_time_seconds"
 private const val KEY_HEALTH_CONNECTED = "health_connected"
+private const val KEY_SESSION_HISTORY = "session_history_list"
+
+data class SessionLogEntry(
+    val id: Long,
+    val dateFormatted: String,
+    val durationMinutes: Int,
+    val startEpochSec: Long,
+    val endEpochSec: Long,
+    val rawString: String
+)
 
 fun saveSelectedTime(context: Context, timeInSeconds: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -94,6 +125,42 @@ fun saveSelectedTime(context: Context, timeInSeconds: Int) {
 fun getSavedSelectedTime(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_SELECTED_TIME, 600) // Default 10 minuti (600s)
+}
+
+// Invia le impostazioni del tempo di preparazione all'orologio Pixel Watch usando sia MessageClient che DataClient permanente
+fun syncSettingsToWatch(context: Context, prepSeconds: Int) {
+    try {
+        // 1. Invio messaggio diretto
+        val messageClient = Wearable.getMessageClient(context)
+        val nodeClient = Wearable.getNodeClient(context)
+        nodeClient.connectedNodes.addOnSuccessListener { nodes ->
+            val payload = "$prepSeconds".toByteArray()
+            for (node in nodes) {
+                messageClient.sendMessage(node.id, "/update_settings", payload)
+            }
+        }
+
+        // 2. Salvataggio nello stato permanente Wearable DataClient (persiste anche se l'orologio era spento)
+        val dataClient = Wearable.getDataClient(context)
+        val putDataMapReq = PutDataMapRequest.create("/still_settings")
+        putDataMapReq.dataMap.putInt("prep_time_seconds", prepSeconds)
+        putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
+        val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
+        dataClient.putDataItem(putDataReq)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
+fun savePrepTime(context: Context, prepSeconds: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_PREP_TIME, prepSeconds).apply()
+    syncSettingsToWatch(context, prepSeconds)
+}
+
+fun getSavedPrepTime(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_PREP_TIME, 0) // Default 0 secondi
 }
 
 fun saveHealthConnectedState(context: Context, isConnected: Boolean) {
@@ -106,6 +173,124 @@ fun isHealthConnectedStateSaved(context: Context): Boolean {
     return prefs.getBoolean(KEY_HEALTH_CONNECTED, false)
 }
 
+fun addSessionToLocalHistory(context: Context, durationSeconds: Int, startInstant: Instant, endInstant: Instant) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val existingSet = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
+    
+    val timestamp = System.currentTimeMillis()
+    val minutes = (durationSeconds / 60).coerceAtLeast(1)
+    val startSec = startInstant.epochSecond
+    val endSec = endInstant.epochSecond
+    val newEntry = "$timestamp|$minutes|$startSec|$endSec"
+    
+    val updatedSet = existingSet.toMutableSet()
+    updatedSet.add(newEntry)
+    prefs.edit().putStringSet(KEY_SESSION_HISTORY, updatedSet).apply()
+}
+
+fun deleteSessionFromLocalHistory(context: Context, rawString: String) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val existingSet = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
+    val updatedSet = existingSet.toMutableSet()
+    updatedSet.remove(rawString)
+    prefs.edit().putStringSet(KEY_SESSION_HISTORY, updatedSet).apply()
+}
+
+fun getLocalSessionHistory(context: Context): List<SessionLogEntry> {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val set = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
+    val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+    
+    return set.mapNotNull { raw ->
+        val parts = raw.split("|")
+        if (parts.size >= 2) {
+            val ts = parts[0].toLongOrNull() ?: 0L
+            val mins = parts[1].toIntOrNull() ?: 0
+            val startSec = if (parts.size >= 4) parts[2].toLongOrNull() ?: (ts / 1000) else (ts / 1000)
+            val endSec = if (parts.size >= 4) parts[3].toLongOrNull() ?: ((ts / 1000) + mins * 60) else ((ts / 1000) + mins * 60)
+            
+            SessionLogEntry(
+                id = ts,
+                dateFormatted = sdf.format(Date(ts)),
+                durationMinutes = mins,
+                startEpochSec = startSec,
+                endEpochSec = endSec,
+                rawString = raw
+            )
+        } else null
+    }.sortedByDescending { it.id }
+}
+
+fun calculateStreakDays(history: List<SessionLogEntry>): Int {
+    if (history.isEmpty()) return 0
+    
+    val calendar = Calendar.getInstance()
+    val sessionDays = history.map {
+        calendar.timeInMillis = it.id
+        val year = calendar.get(Calendar.YEAR)
+        val day = calendar.get(Calendar.DAY_OF_YEAR)
+        "$year-$day"
+    }.distinct()
+
+    var streak = 0
+    val todayCal = Calendar.getInstance()
+    
+    for (i in 0..365) {
+        val y = todayCal.get(Calendar.YEAR)
+        val d = todayCal.get(Calendar.DAY_OF_YEAR)
+        val key = "$y-$d"
+        
+        if (sessionDays.contains(key)) {
+            streak++
+            todayCal.add(Calendar.DAY_OF_YEAR, -1)
+        } else {
+            if (i == 0) {
+                todayCal.add(Calendar.DAY_OF_YEAR, -1)
+                continue
+            }
+            break
+        }
+    }
+    return streak
+}
+
+// --- FUNZIONI PER LA MODALITÀ NON DISTURBARE ---
+fun isDndPermissionGranted(context: Context): Boolean {
+    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    return notificationManager.isNotificationPolicyAccessGranted
+}
+
+fun enableDoNotDisturb(context: Context) {
+    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    if (notificationManager.isNotificationPolicyAccessGranted) {
+        try {
+            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
+
+fun disableDoNotDisturb(context: Context) {
+    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    if (notificationManager.isNotificationPolicyAccessGranted) {
+        try {
+            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
+
+fun requestDndAccess(context: Context) {
+    try {
+        val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
 @OptIn(ExperimentalMindfulnessSessionApi::class)
 @Composable
 fun MeditationTimerScreen(modifier: Modifier = Modifier) {
@@ -116,18 +301,21 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
     val healthConnectManager = remember { HealthConnectManager(context) }
     var isHealthConnected by remember { mutableStateOf(isHealthConnectedStateSaved(context)) }
 
-    // Verifica automatica dello stato dei permessi all'avvio
     LaunchedEffect(Unit) {
         if (healthConnectManager.hasAllPermissions()) {
             isHealthConnected = true
             saveHealthConnectedState(context, true)
         }
+        // Invia le impostazioni correnti all'orologio all'avvio dell'app
+        syncSettingsToWatch(context, getSavedPrepTime(context))
     }
 
-    // Dialog Impostazioni
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showStatsDialog by remember { mutableStateOf(false) }
+    var sessionToDelete by remember { mutableStateOf<SessionLogEntry?>(null) }
     
-    // Launcher per richiedere i permessi di Health Connect
+    var sessionHistoryList by remember { mutableStateOf(getLocalSessionHistory(context)) }
+
     val requestPermissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract()
     ) { grantedPermissions ->
@@ -142,7 +330,6 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // Apri lo Store di Google per installare/aggiornare Connessione Salute se manca
     fun openHealthConnectInPlayStore() {
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.apps.healthdata"))
@@ -153,7 +340,6 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // Funzione per avviare il collegamento con Health Connect verificando lo stato del dispositivo
     fun connectToHealth() {
         when (healthConnectManager.getHealthConnectStatus()) {
             HealthConnectClient.SDK_AVAILABLE -> {
@@ -177,25 +363,26 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // 1. Carichiamo l'orario salvato la volta precedente! Default 10 min (600s). -1 = Infinito.
     var selectedTimeInSeconds by remember { mutableStateOf(getSavedSelectedTime(context)) }
     
-    // Tempo attuale che scorre
+    var prepTimeSeconds by remember { mutableStateOf(getSavedPrepTime(context)) }
+    var isPreparing by remember { mutableStateOf(false) }
+    var prepTimeLeftSeconds by remember { mutableStateOf(0) }
+
     var timeLeftInSeconds by remember { mutableStateOf(selectedTimeInSeconds) }
     
-    // Stato del timer
+    var isOvertime by remember { mutableStateOf(false) }
+    var overtimeSeconds by remember { mutableStateOf(0) }
+
     var isTimerRunning by remember { mutableStateOf(false) }
 
-    // Registrazione orario inizio
     var sessionStartTime by remember { mutableStateOf<Instant?>(null) }
 
-    // Salva automaticamente la scelta dell'utente ogni volta che cambia durata
     fun updateTimeSelection(newTime: Int) {
         selectedTimeInSeconds = newTime
         saveSelectedTime(context, newTime)
     }
 
-    // Calcolo percentuale cerchio
     val progress = remember(timeLeftInSeconds, selectedTimeInSeconds) {
         if (selectedTimeInSeconds > 0) {
             timeLeftInSeconds.toFloat() / selectedTimeInSeconds.toFloat()
@@ -204,64 +391,117 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // Motore del timer e suono del Gong
+    val overtimeColor = Color(0xFFE5A93C)
+
     LaunchedEffect(isTimerRunning) {
         if (isTimerRunning) {
-            if (sessionStartTime == null) {
-                sessionStartTime = Instant.now()
-            }
+            enableDoNotDisturb(context)
 
-            withContext(Dispatchers.Default) {
-                playGongSound()
-            }
-        }
-
-        while (isTimerRunning) {
-            delay(1000L)
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Still::MeditationTimerWakeLock")
             
-            if (selectedTimeInSeconds == -1) {
-                timeLeftInSeconds += 1 // Infinito
-            } else {
-                if (timeLeftInSeconds > 0) {
-                    timeLeftInSeconds -= 1
-                }
-                
-                // Quando arriva a 0: FINE MEDITAZIONE
-                if (timeLeftInSeconds == 0) {
-                    isTimerRunning = false
+            try {
+                wakeLock.acquire(12 * 60 * 60 * 1000L)
+
+                // --- 1. CONTO ALLA ROVESCIA DI PREPARAZIONE ---
+                if (sessionStartTime == null && prepTimeSeconds > 0) {
+                    isPreparing = true
+                    prepTimeLeftSeconds = prepTimeSeconds
                     
+                    while (prepTimeLeftSeconds > 0 && isTimerRunning) {
+                        delay(1000L)
+                        prepTimeLeftSeconds -= 1
+                    }
+                    isPreparing = false
+                }
+
+                if (!isTimerRunning) return@LaunchedEffect
+
+                // --- 2. INIZIO EFFETTIVO MEDITAZIONE E GONG ---
+                if (sessionStartTime == null) {
+                    sessionStartTime = Instant.now()
                     withContext(Dispatchers.Default) {
                         playGongSound()
                     }
+                }
 
-                    // Sincronizzazione automatica con Google Health Connect
-                    val start = sessionStartTime
-                    val end = Instant.now()
-                    if (start != null && Duration.between(start, end).seconds >= 10) {
-                        coroutineScope.launch {
-                            if (healthConnectManager.hasAllPermissions()) {
-                                val saved = healthConnectManager.saveMeditationSession(start, end)
-                                if (saved) {
-                                    Toast.makeText(context, "Sessione salvata su Google Salute! 🧘‍♂️", Toast.LENGTH_LONG).show()
-                                }
+                val initialSeconds = timeLeftInSeconds
+                val startRealtime = SystemClock.elapsedRealtime()
+
+                while (isTimerRunning) {
+                    delay(500L)
+                    
+                    val elapsedSeconds = ((SystemClock.elapsedRealtime() - startRealtime) / 1000L).toInt()
+
+                    if (selectedTimeInSeconds == -1) {
+                        timeLeftInSeconds = initialSeconds + elapsedSeconds
+                    } else if (!isOvertime) {
+                        val remaining = initialSeconds - elapsedSeconds
+                        if (remaining > 0) {
+                            timeLeftInSeconds = remaining
+                        } else {
+                            timeLeftInSeconds = 0
+                            isOvertime = true
+                            overtimeSeconds = 0
+                            
+                            withContext(Dispatchers.Default) {
+                                playGongSound()
                             }
-                            sessionStartTime = null
                         }
+                    } else {
+                        val overtimeStartRealtime = startRealtime + (initialSeconds * 1000L)
+                        val extraSec = ((SystemClock.elapsedRealtime() - overtimeStartRealtime) / 1000L).toInt()
+                        overtimeSeconds = extraSec.coerceAtLeast(0)
                     }
                 }
+            } finally {
+                disableDoNotDisturb(context)
+                if (wakeLock.isHeld) {
+                    wakeLock.release()
+                }
             }
+        } else {
+            isPreparing = false
+            disableDoNotDisturb(context)
         }
     }
 
-    // Effetto per riallineare il tempo quando si cambia durata
     LaunchedEffect(selectedTimeInSeconds) {
         if (!isTimerRunning) {
             timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
+            isOvertime = false
+            overtimeSeconds = 0
             sessionStartTime = null
         }
     }
 
-    val isInitialState = !isTimerRunning && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
+    val isInitialState = !isTimerRunning && !isOvertime && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
+
+    fun saveAndFinishSession(includeExtra: Boolean) {
+        val start = sessionStartTime ?: Instant.now()
+        val plannedSec = if (selectedTimeInSeconds > 0) selectedTimeInSeconds else timeLeftInSeconds
+        val totalSec = if (includeExtra && isOvertime) (plannedSec + overtimeSeconds) else plannedSec
+        val end = start.plusSeconds(totalSec.toLong())
+
+        if (totalSec >= 10) {
+            coroutineScope.launch {
+                if (healthConnectManager.hasAllPermissions()) {
+                    val saved = healthConnectManager.saveMeditationSession(start, end)
+                    if (saved) {
+                        addSessionToLocalHistory(context, totalSec, start, end)
+                        sessionHistoryList = getLocalSessionHistory(context)
+                        Toast.makeText(context, "Sessione di $totalSec sec salvata su Google Salute! 🧘‍♂️", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+
+        isTimerRunning = false
+        isOvertime = false
+        overtimeSeconds = 0
+        timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
+        sessionStartTime = null
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Column(
@@ -271,7 +511,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // --- BARRA SUPERIORE CON IMPOSTAZIONI (SX), TITOLO (CENTRO) E CHIUDI X (DX) ---
+            // --- BARRA SUPERIORE ---
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -279,12 +519,18 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Tasto Impostazioni (Ingranaggio ⚙️) a sinistra
-                IconButton(onClick = { showSettingsDialog = true }) {
-                    Text("⚙️", fontSize = 20.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showSettingsDialog = true }) {
+                        Text("⚙️", fontSize = 20.sp)
+                    }
+                    IconButton(onClick = { 
+                        sessionHistoryList = getLocalSessionHistory(context)
+                        showStatsDialog = true 
+                    }) {
+                        Text("📊", fontSize = 20.sp)
+                    }
                 }
 
-                // Titolo e sottotitolo al centro
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "Vipassana",
@@ -292,31 +538,52 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = if (selectedTimeInSeconds == -1) "Modalità Senza Limiti" else "Timer di Meditazione",
+                        text = if (isPreparing) "Preparati a meditare..." 
+                               else if (isOvertime) "Tempo Extra di Meditazione ✨" 
+                               else if (selectedTimeInSeconds == -1) "Modalità Senza Limiti" 
+                               else "Timer di Meditazione",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (isPreparing) MaterialTheme.colorScheme.tertiary 
+                                else if (isOvertime) overtimeColor 
+                                else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                // Tasto Chiudi App (❌) a destra
                 IconButton(
                     onClick = {
-                        (context as? Activity)?.finish()
+                        val activity = context as? Activity
+                        activity?.finishAndRemoveTask()
                     }
                 ) {
                     Text("❌", fontSize = 20.sp)
                 }
             }
 
-            // --- CERCHIO CON TIMER AL CENTRO ---
+            // --- CERCHIO CON TIMER AL CENTRO E DOPPIO CERCHIO EXTRA ---
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.size(260.dp)
+                modifier = Modifier.size(280.dp)
             ) {
-                if (selectedTimeInSeconds != -1) {
+                if (isOvertime) {
+                    CircularProgressIndicator(
+                        progress = { 1f },
+                        modifier = Modifier.size(280.dp),
+                        color = overtimeColor,
+                        strokeWidth = 6.dp,
+                        strokeCap = StrokeCap.Round
+                    )
+                }
+
+                if (isPreparing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(250.dp),
+                        color = MaterialTheme.colorScheme.tertiary,
+                        strokeWidth = 6.dp
+                    )
+                } else if (selectedTimeInSeconds != -1) {
                     CircularProgressIndicator(
                         progress = { progress },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.size(250.dp),
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                         strokeWidth = 8.dp,
@@ -325,23 +592,54 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                 } else {
                     CircularProgressIndicator(
                         progress = { 1f },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.size(250.dp),
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
                         strokeWidth = 4.dp
                     )
                 }
 
-                Text(
-                    text = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) {
-                        "∞"
-                    } else {
-                        formatTime(timeLeftInSeconds)
-                    },
-                    style = MaterialTheme.typography.displayLarge.copy(
-                        fontSize = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) 80.sp else 54.sp,
-                        fontWeight = FontWeight.Normal
+                if (isPreparing) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Preparati",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                        Text(
+                            text = "${prepTimeLeftSeconds}s",
+                            style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                } else if (isOvertime) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Extra",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = overtimeColor
+                        )
+                        Text(
+                            text = "+${formatTime(overtimeSeconds)}",
+                            style = MaterialTheme.typography.displayLarge.copy(
+                                fontSize = 50.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = overtimeColor
+                        )
+                    }
+                } else {
+                    Text(
+                        text = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) {
+                            "∞"
+                        } else {
+                            formatTime(timeLeftInSeconds)
+                        },
+                        style = MaterialTheme.typography.displayLarge.copy(
+                            fontSize = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) 80.sp else 54.sp,
+                            fontWeight = FontWeight.Normal
+                        )
                     )
-                )
+                }
             }
 
             // --- CONTROLLI E IMPOSTAZIONI TEMPO ---
@@ -355,12 +653,11 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                     exit = fadeOut()
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        // --- PRESET RAPIDI (Chip) ---
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val presets = listOf(5, 10, 15, 20, 30)
+                            val presets = listOf(5, 10, 15, 20)
                             presets.forEach { min ->
                                 val seconds = min * 60
                                 FilterChip(
@@ -378,7 +675,6 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // --- REGOLAZIONE FINE (+1m, -1m, +5m, -5m) ---
                         if (selectedTimeInSeconds != -1) {
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -408,54 +704,97 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                     }
                 }
 
-                // --- PULSANTE PRINCIPALE INIZIA / PAUSA ---
-                val canStart = isTimerRunning || selectedTimeInSeconds == -1 || timeLeftInSeconds > 0
-
-                Button(
-                    onClick = { 
-                        if (!isTimerRunning && sessionStartTime == null) {
-                            sessionStartTime = Instant.now()
-                        }
-                        isTimerRunning = !isTimerRunning 
-                    },
-                    enabled = canStart,
-                    shape = RoundedCornerShape(28.dp),
-                    modifier = Modifier
-                        .height(56.dp)
-                        .width(220.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isTimerRunning) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text(
-                        text = if (isTimerRunning) "Pausa" else "Inizia Meditazione",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium)
-                    )
-                }
-
-                // --- PULSANTE RESETTA ---
-                if (!isInitialState && !isTimerRunning) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = { 
-                            val start = sessionStartTime
-                            val end = Instant.now()
-                            if (start != null && Duration.between(start, end).seconds >= 10) {
-                                coroutineScope.launch {
-                                    if (healthConnectManager.hasAllPermissions()) {
-                                        val saved = healthConnectManager.saveMeditationSession(start, end)
-                                        if (saved) {
-                                            Toast.makeText(context, "Sessione parziale salvata su Google Salute!", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                }
-                            }
-                            timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds 
-                            sessionStartTime = null
-                        },
-                        shape = RoundedCornerShape(20.dp)
+                // --- PULSANTE PRINCIPALE INIZIA / PAUSA / COMPLETA EXTRA ---
+                if (isOvertime) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("Resetta e Salva Sessione")
+                        Button(
+                            onClick = { saveAndFinishSession(includeExtra = true) },
+                            shape = RoundedCornerShape(28.dp),
+                            modifier = Modifier
+                                .height(52.dp)
+                                .fillMaxWidth(0.85f),
+                            colors = ButtonDefaults.buttonColors(containerColor = overtimeColor)
+                        ) {
+                            Text(
+                                text = "Salva con Extra (+${(overtimeSeconds / 60)}m)",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = Color.Black
+                            )
+                        }
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { 
+                                    isTimerRunning = false
+                                    isOvertime = false
+                                    overtimeSeconds = 0
+                                    timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
+                                    sessionStartTime = null
+                                },
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("Resetta")
+                            }
+
+                            OutlinedButton(
+                                onClick = { saveAndFinishSession(includeExtra = false) },
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("Salva solo Previsto (${selectedTimeInSeconds / 60}m)")
+                            }
+                        }
+                    }
+                } else {
+                    val canStart = isTimerRunning || selectedTimeInSeconds == -1 || timeLeftInSeconds > 0
+
+                    Button(
+                        onClick = { isTimerRunning = !isTimerRunning },
+                        enabled = canStart,
+                        shape = RoundedCornerShape(28.dp),
+                        modifier = Modifier
+                            .height(56.dp)
+                            .width(220.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isTimerRunning) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text(
+                            text = if (isTimerRunning) "Pausa" else "Inizia Meditazione",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium)
+                        )
+                    }
+
+                    if (!isInitialState && !isTimerRunning) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { 
+                                    timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds 
+                                    sessionStartTime = null
+                                },
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("Resetta")
+                            }
+
+                            Button(
+                                onClick = { 
+                                    saveAndFinishSession(includeExtra = false)
+                                },
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text("Salva e Resetta")
+                            }
+                        }
                     }
                 }
             }
@@ -463,11 +802,62 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
         // --- DIALOG IMPOSTAZIONI ---
         if (showSettingsDialog) {
+            var prepInputText by remember { mutableStateOf(prepTimeSeconds.toString()) }
+            val dndGranted = remember { isDndPermissionGranted(context) }
+
             AlertDialog(
                 onDismissRequest = { showSettingsDialog = false },
                 title = @Composable { Text(text = "Impostazioni Still ⚙️") },
                 text = @Composable {
                     Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "Ritardo di Preparazione (prima del Gong):",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
+                        OutlinedTextField(
+                            value = prepInputText,
+                            onValueChange = { input ->
+                                if (input.all { it.isDigit() } && input.length <= 3) {
+                                    prepInputText = input
+                                    val secs = input.toIntOrNull() ?: 0
+                                    prepTimeSeconds = secs
+                                    savePrepTime(context, secs)
+                                }
+                            },
+                            label = { Text("Secondi di attesa") },
+                            placeholder = { Text("es. 10") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "Modalità Non Disturbare:",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        
+                        if (dndGranted) {
+                            Text(
+                                text = "🌙 Attiva in automatico durante la meditazione",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            OutlinedButton(
+                                onClick = { requestDndAccess(context) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Autorizza 'Non Disturbare' 🌙")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
                         Text(
                             text = "Stato Google Connessione Salute:",
                             style = MaterialTheme.typography.titleSmall
@@ -479,13 +869,26 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                             color = if (isHealthConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                         
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         Button(
                             onClick = { connectToHealth() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (isHealthConnected) "Riconnetti / Verifica Permessi 🏥" else "Connetti a Google Salute 🏥")
+                            Text(if (isHealthConnected) "Riconnetti / Verifica Permessi" else "Connetti a Google Salute 🏥")
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedButton(
+                            onClick = { 
+                                showSettingsDialog = false
+                                sessionHistoryList = getLocalSessionHistory(context)
+                                showStatsDialog = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("📜 Mostra Dati Inviati e Statistiche")
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -499,6 +902,159 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                 confirmButton = {
                     TextButton(onClick = { showSettingsDialog = false }) {
                         Text("Chiudi")
+                    }
+                }
+            )
+        }
+
+        // --- DIALOG STATISTICHE E STORICO CON CANCELLAZIONE 📊 ---
+        if (showStatsDialog) {
+            val totalMinutes = sessionHistoryList.sumOf { it.durationMinutes }
+            val totalSessions = sessionHistoryList.size
+            val streak = calculateStreakDays(sessionHistoryList)
+
+            AlertDialog(
+                onDismissRequest = { showStatsDialog = false },
+                title = @Composable { Text(text = "Statistiche e Storico 📊") },
+                text = @Composable {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text("Minuti", style = MaterialTheme.typography.labelMedium)
+                                    Text("$totalMinutes min", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                }
+                            }
+
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text("Sessioni", style = MaterialTheme.typography.labelMedium)
+                                    Text("$totalSessions", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                }
+                            }
+
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text("Striscia", style = MaterialTheme.typography.labelMedium)
+                                    Text("🔥 $streak g", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "Cronologia Meditazioni:",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        if (sessionHistoryList.isEmpty()) {
+                            Text(
+                                text = "Nessuna sessione registrata finora. Completa una meditazione!",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            )
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 240.dp)
+                            ) {
+                                items(sessionHistoryList) { session ->
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(
+                                                    text = "🧘 ${session.durationMinutes} minuti",
+                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                                                )
+                                                Text(
+                                                    text = session.dateFormatted,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+
+                                            IconButton(onClick = { sessionToDelete = session }) {
+                                                Text("🗑️", fontSize = 18.sp)
+                                            }
+                                        }
+                                        HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showStatsDialog = false }) {
+                        Text("Chiudi")
+                    }
+                }
+            )
+        }
+
+        // --- CONFERMA CANCELLAZIONE SINGOLA SESSIONE ---
+        sessionToDelete?.let { session ->
+            AlertDialog(
+                onDismissRequest = { sessionToDelete = null },
+                title = { Text("Elimina Meditazione 🗑️") },
+                text = {
+                    Text("Vuoi davvero eliminare la sessione di ${session.durationMinutes} min del ${session.dateFormatted} sia dall'app che da Google Connessione Salute?")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                healthConnectManager.deleteMeditationSession(
+                                    Instant.ofEpochSecond(session.startEpochSec),
+                                    Instant.ofEpochSecond(session.endEpochSec)
+                                )
+                                deleteSessionFromLocalHistory(context, session.rawString)
+                                sessionHistoryList = getLocalSessionHistory(context)
+                                sessionToDelete = null
+                                Toast.makeText(context, "Sessione eliminata!", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Elimina")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(onClick = { sessionToDelete = null }) {
+                        Text("Annulla")
                     }
                 }
             )

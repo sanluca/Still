@@ -58,6 +58,9 @@ dependencies {
     // Health Connect Client
     implementation("androidx.health.connect:connect-client:1.1.0")
 
+    // Play Services Wearable per comunicazione con Pixel Watch
+    implementation("com.google.android.gms:play-services-wearable:18.2.0")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

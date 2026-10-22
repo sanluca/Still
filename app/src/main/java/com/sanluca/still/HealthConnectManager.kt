@@ -5,7 +5,9 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.MindfulnessSessionRecord
+import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -36,7 +38,7 @@ class HealthConnectManager(private val context: Context) {
         return granted.containsAll(permissions)
     }
 
-    // Registra una sessione di meditazione Vipassana su Google Salute (Health Connect)
+    // Registra una sessione di meditazione Vipassana su Google Salute (Health Connect) con registrazione ATTIVA
     suspend fun saveMeditationSession(startTime: Instant, endTime: Instant): Boolean {
         if (!isHealthConnectAvailable()) return false
         return try {
@@ -45,12 +47,30 @@ class HealthConnectManager(private val context: Context) {
                 startZoneOffset = ZoneOffset.systemDefault().rules.getOffset(startTime),
                 endTime = endTime,
                 endZoneOffset = ZoneOffset.systemDefault().rules.getOffset(endTime),
-                metadata = Metadata.manualEntry(),
+                metadata = Metadata.activelyRecorded(Device(type = Device.TYPE_PHONE)),
                 mindfulnessSessionType = MindfulnessSessionRecord.MINDFULNESS_SESSION_TYPE_MEDITATION,
                 title = "Meditazione Vipassana",
                 notes = "Sessione meditativa registrata con Still"
             )
             healthConnectClient.insertRecords(listOf(record))
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    // Cancella una sessione specifica da Google Salute in base all'intervallo temporale
+    suspend fun deleteMeditationSession(startTime: Instant, endTime: Instant): Boolean {
+        if (!isHealthConnectAvailable()) return false
+        return try {
+            healthConnectClient.deleteRecords(
+                recordType = MindfulnessSessionRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(
+                    startTime.minusSeconds(2),
+                    endTime.plusSeconds(2)
+                )
+            )
             true
         } catch (e: Exception) {
             e.printStackTrace()
