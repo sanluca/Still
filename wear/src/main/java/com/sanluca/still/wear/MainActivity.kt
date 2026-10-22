@@ -10,9 +10,13 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.os.VibratorManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,11 +28,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,7 +51,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -64,19 +69,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private const val PREFS_NAME = "still_wear_prefs"
-private const val KEY_PREP_TIME = "prep_time_seconds"
-
-fun getSavedPrepTime(context: Context): Int {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    return prefs.getInt(KEY_PREP_TIME, 0)
-}
-
-fun savePrepTime(context: Context, secs: Int) {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    prefs.edit().putInt(KEY_PREP_TIME, secs).apply()
-}
-
+// Invia i dati della meditazione completata dallo smartphone a Google Connessione Salute
 fun sendSessionToPhone(context: Context, durationSec: Int, startInstant: Instant, endInstant: Instant) {
     try {
         val messageClient = Wearable.getMessageClient(context)
@@ -93,22 +86,19 @@ fun sendSessionToPhone(context: Context, durationSec: Int, startInstant: Instant
     }
 }
 
-// Vibrazione per l'orologio con fallback diretto di sistema
+// Vibrazione aptica per l'orologio al Gong
 fun triggerHapticGong(context: Context) {
     try {
-        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-        if (vibrator != null && vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
-                } catch (e: Exception) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(1000L, VibrationEffect.DEFAULT_AMPLITUDE))
-                }
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(1000L, VibrationEffect.DEFAULT_AMPLITUDE))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            val vibrator = vibratorManager.defaultVibrator
+            vibrator.vibrate(VibrationEffect.createOneShot(800L, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(800L, VibrationEffect.DEFAULT_AMPLITUDE))
             } else {
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(1000L)
+                vibrator.vibrate(800L)
             }
         }
     } catch (e: Exception) {
@@ -120,39 +110,17 @@ fun triggerHapticGong(context: Context) {
 fun WearMeditationApp() {
     val context = LocalContext.current
 
-    var selectedTimeInSeconds by remember { mutableStateOf(300) } // Default 5 min
+    var selectedTimeInSeconds by remember { mutableStateOf(600) } // Default 10 min
+    var timeLeftInSeconds by remember { mutableStateOf(selectedTimeInSeconds) }
     
-    var prepTimeSeconds by remember { mutableStateOf(getSavedPrepTime(context)) }
     var isPreparing by remember { mutableStateOf(false) }
     var prepTimeLeftSeconds by remember { mutableStateOf(0) }
-
-    var timeLeftInSeconds by remember { mutableStateOf(selectedTimeInSeconds) }
 
     var isOvertime by remember { mutableStateOf(false) }
     var overtimeSeconds by remember { mutableStateOf(0) }
 
     var isTimerRunning by remember { mutableStateOf(false) }
     var sessionStartTime by remember { mutableStateOf<Instant?>(null) }
-
-    LaunchedEffect(Unit) {
-        try {
-            val messageClient = Wearable.getMessageClient(context)
-            messageClient.addListener { messageEvent ->
-                if (messageEvent.path == "/update_settings") {
-                    val prepSec = String(messageEvent.data).toIntOrNull() ?: 0
-                    prepTimeSeconds = prepSec
-                    savePrepTime(context, prepSec)
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun updateTimeSelection(newTime: Int) {
-        selectedTimeInSeconds = newTime
-        timeLeftInSeconds = if (newTime == -1) 0 else newTime
-    }
 
     val progress = remember(timeLeftInSeconds, selectedTimeInSeconds) {
         if (selectedTimeInSeconds > 0) {
@@ -164,7 +132,6 @@ fun WearMeditationApp() {
 
     val backgroundColor = Color(0xFF12232E)
     val overtimeColor = Color(0xFFE5A93C)
-    val prepColor = Color(0xFF80CBC4)
 
     LaunchedEffect(isTimerRunning) {
         if (isTimerRunning) {
@@ -174,21 +141,8 @@ fun WearMeditationApp() {
             try {
                 wakeLock.acquire(12 * 60 * 60 * 1000L)
 
-                // --- 1. CONTO ALLA ROVESCIA DI PREPARAZIONE ---
-                if (sessionStartTime == null && prepTimeSeconds > 0) {
-                    isPreparing = true
-                    prepTimeLeftSeconds = prepTimeSeconds
-                    
-                    while (prepTimeLeftSeconds > 0 && isTimerRunning) {
-                        delay(1000L)
-                        prepTimeLeftSeconds -= 1
-                    }
-                    isPreparing = false
-                }
-
                 if (!isTimerRunning) return@LaunchedEffect
 
-                // --- 2. INIZIO EFFETTIVO MEDITAZIONE CON GONG AUDIO E VIBRAZIONE ---
                 if (sessionStartTime == null) {
                     sessionStartTime = Instant.now()
                     triggerHapticGong(context)
@@ -231,8 +185,6 @@ fun WearMeditationApp() {
                     wakeLock.release()
                 }
             }
-        } else {
-            isPreparing = false
         }
     }
 
@@ -254,239 +206,99 @@ fun WearMeditationApp() {
         sessionStartTime = null
     }
 
-    val isInitialState = !isTimerRunning && !isOvertime && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundColor),
+            .background(backgroundColor)
+            .padding(12.dp),
         contentAlignment = Alignment.Center
     ) {
-        ScalingLazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxSize()
         ) {
-            // ================= PAGINA 1: CERCHIO E TIMER AL CENTRO OTTICO =================
-            item {
+            // Intestazione
+            Text(
+                text = if (isOvertime) "Extra ✨" else "Vipassana",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isOvertime) overtimeColor else Color(0xFF88A0A8)
+            )
+
+            // Cerchio Timer
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(130.dp)
+            ) {
+                if (isOvertime) {
+                    CircularProgressIndicator(
+                        progress = { 1f },
+                        modifier = Modifier.fillMaxSize(),
+                        color = overtimeColor,
+                        strokeWidth = 4.dp
+                    )
+                } else if (selectedTimeInSeconds != -1) {
+                    CircularProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxSize(),
+                        color = Color(0xFF4A707A),
+                        strokeWidth = 5.dp
+                    )
+                }
+
                 Text(
-                    text = if (isPreparing) "Preparati..." else if (isOvertime) "Extra ✨" else "Vipassana",
-                    fontSize = 11.sp,
+                    text = if (isOvertime) "+${formatTime(overtimeSeconds)}" else formatTime(timeLeftInSeconds),
+                    fontSize = if (isOvertime) 22.sp else 26.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isPreparing) prepColor else if (isOvertime) overtimeColor else Color(0xFF88A0A8)
+                    color = if (isOvertime) overtimeColor else Color.White
                 )
             }
 
-            // CERCHIO GRANDE (155dp)
-            item {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(155.dp)
+            // Controlli
+            if (isOvertime) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isPreparing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.fillMaxSize(),
-                            color = prepColor,
-                            strokeWidth = 6.dp
-                        )
-                    } else if (isOvertime) {
-                        CircularProgressIndicator(
-                            progress = { 1f },
-                            modifier = Modifier.fillMaxSize(),
-                            color = overtimeColor,
-                            strokeWidth = 6.dp,
-                            strokeCap = StrokeCap.Round
-                        )
-                    } else if (selectedTimeInSeconds != -1) {
-                        CircularProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.fillMaxSize(),
-                            color = Color(0xFF4A707A),
-                            strokeWidth = 6.dp,
-                            strokeCap = StrokeCap.Round
-                        )
-                    } else {
-                        CircularProgressIndicator(
-                            progress = { 1f },
-                            modifier = Modifier.fillMaxSize(),
-                            color = Color(0xFF4A707A).copy(alpha = 0.5f),
-                            strokeWidth = 4.dp
-                        )
+                    Button(
+                        onClick = { saveAndFinishSession(includeExtra = true) },
+                        modifier = Modifier.height(36.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = overtimeColor)
+                    ) {
+                        Text("Salva +Extra", fontSize = 10.sp, color = Color.Black)
                     }
 
-                    if (isPreparing) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Preparati", fontSize = 11.sp, color = prepColor)
-                            Text("${prepTimeLeftSeconds}s", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = prepColor)
-                        }
-                    } else {
-                        Text(
-                            text = if (isOvertime) "+${formatTime(overtimeSeconds)}" else if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) "∞" else formatTime(timeLeftInSeconds),
-                            fontSize = if (isOvertime) 26.sp else 32.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isOvertime) overtimeColor else Color.White
-                        )
+                    OutlinedButton(
+                        onClick = { saveAndFinishSession(includeExtra = false) },
+                        modifier = Modifier.height(36.dp)
+                    ) {
+                        Text("Solo Previsto", fontSize = 10.sp)
                     }
                 }
-            }
-
-            // PULSANTI PRINCIPALI (INIZIA / PAUSA / SALVA)
-            item {
-                if (isOvertime) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { isTimerRunning = !isTimerRunning },
+                        modifier = Modifier.height(38.dp)
                     ) {
-                        Button(
-                            onClick = { saveAndFinishSession(includeExtra = true) },
-                            modifier = Modifier.height(34.dp).fillMaxWidth(0.9f),
-                            colors = ButtonDefaults.buttonColors(containerColor = overtimeColor)
-                        ) {
-                            Text("Salva +Extra (+${overtimeSeconds / 60}m)", fontSize = 10.sp, color = Color.Black, fontWeight = FontWeight.Bold)
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            OutlinedButton(
-                                onClick = { 
-                                    isTimerRunning = false
-                                    isOvertime = false
-                                    overtimeSeconds = 0
-                                    timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
-                                    sessionStartTime = null
-                                },
-                                modifier = Modifier.height(32.dp)
-                            ) {
-                                Text("Resetta", fontSize = 10.sp)
-                            }
-
-                            OutlinedButton(
-                                onClick = { saveAndFinishSession(includeExtra = false) },
-                                modifier = Modifier.height(32.dp)
-                            ) {
-                                Text("Solo Previsto", fontSize = 10.sp)
-                            }
-                        }
+                        Text(if (isTimerRunning) "Pausa" else "Inizia", fontSize = 12.sp)
                     }
-                } else {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = { isTimerRunning = !isTimerRunning },
+
+                    if (!isTimerRunning && timeLeftInSeconds != selectedTimeInSeconds) {
+                        OutlinedButton(
+                            onClick = { 
+                                timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
+                                sessionStartTime = null
+                            },
                             modifier = Modifier.height(38.dp)
                         ) {
-                            Text(if (isTimerRunning) "Pausa" else "Inizia", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                        }
-
-                        if (!isInitialState && !isTimerRunning) {
-                            OutlinedButton(
-                                onClick = { 
-                                    timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
-                                    sessionStartTime = null 
-                                },
-                                modifier = Modifier.height(38.dp)
-                            ) {
-                                Text("Resetta", fontSize = 11.sp)
-                            }
+                            Text("Resetta", fontSize = 10.sp)
                         }
                     }
-                }
-            }
-
-            // ================= PAGINA 2: IMPOSTAZIONI DURATA E PREPARAZIONE =================
-            if (!isTimerRunning && !isOvertime) {
-                item {
-                    Spacer(modifier = Modifier.height(20.dp))
-                    HorizontalDivider(modifier = Modifier.fillMaxWidth(0.6f), color = Color(0xFF4A707A))
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                item {
-                    Text("⚙️ Impostazioni", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF88A0A8))
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(6.dp))
-                }
-
-                // 1. REGOLAZIONE DURATA MEDITAZIONE
-                item {
-                    Text("Durata Meditazione:", fontSize = 10.sp, color = Color.Gray)
-                }
-
-                item {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    ) {
-                        FilterChip(
-                            selected = selectedTimeInSeconds == 300,
-                            onClick = { updateTimeSelection(300) },
-                            label = { Text("5m", fontSize = 11.sp) }
-                        )
-
-                        OutlinedButton(
-                            onClick = { if (selectedTimeInSeconds > 60) updateTimeSelection(selectedTimeInSeconds - 60) },
-                            enabled = selectedTimeInSeconds > 60,
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Text("-1m", fontSize = 11.sp)
-                        }
-
-                        OutlinedButton(
-                            onClick = { updateTimeSelection(selectedTimeInSeconds + 60) },
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Text("+1m", fontSize = 11.sp)
-                        }
-                    }
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                // 2. REGOLAZIONE TEMPO PREPARAZIONE (Prep)
-                item {
-                    Text("Preparazione (Gong): ${prepTimeSeconds}s", fontSize = 10.sp, color = prepColor)
-                }
-
-                item {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    ) {
-                        OutlinedButton(
-                            onClick = { 
-                                if (prepTimeSeconds >= 5) {
-                                    prepTimeSeconds -= 5
-                                    savePrepTime(context, prepTimeSeconds)
-                                }
-                            },
-                            enabled = prepTimeSeconds >= 5,
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Text("-5s", fontSize = 11.sp)
-                        }
-
-                        OutlinedButton(
-                            onClick = { 
-                                prepTimeSeconds += 5
-                                savePrepTime(context, prepTimeSeconds)
-                            },
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Text("+5s", fontSize = 11.sp)
-                        }
-                    }
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(20.dp))
                 }
             }
         }

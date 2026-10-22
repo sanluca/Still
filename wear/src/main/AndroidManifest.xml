@@ -3,9 +3,6 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
 
-    <!-- Permesso per attivare la modalità Non Disturbare sull'orologio -->
-    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
-
     <!-- Permessi per la vibrazione aptica dell'orologio e CPU durante la meditazione -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />

@@ -71,8 +71,6 @@ import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
-import com.google.android.gms.wearable.PutDataMapRequest
-import com.google.android.gms.wearable.Wearable
 import com.sanluca.still.ui.theme.StillTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -127,35 +125,9 @@ fun getSavedSelectedTime(context: Context): Int {
     return prefs.getInt(KEY_SELECTED_TIME, 600) // Default 10 minuti (600s)
 }
 
-// Invia le impostazioni del tempo di preparazione all'orologio Pixel Watch usando sia MessageClient che DataClient permanente
-fun syncSettingsToWatch(context: Context, prepSeconds: Int) {
-    try {
-        // 1. Invio messaggio diretto
-        val messageClient = Wearable.getMessageClient(context)
-        val nodeClient = Wearable.getNodeClient(context)
-        nodeClient.connectedNodes.addOnSuccessListener { nodes ->
-            val payload = "$prepSeconds".toByteArray()
-            for (node in nodes) {
-                messageClient.sendMessage(node.id, "/update_settings", payload)
-            }
-        }
-
-        // 2. Salvataggio nello stato permanente Wearable DataClient (persiste anche se l'orologio era spento)
-        val dataClient = Wearable.getDataClient(context)
-        val putDataMapReq = PutDataMapRequest.create("/still_settings")
-        putDataMapReq.dataMap.putInt("prep_time_seconds", prepSeconds)
-        putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
-        val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
-        dataClient.putDataItem(putDataReq)
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-}
-
 fun savePrepTime(context: Context, prepSeconds: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_PREP_TIME, prepSeconds).apply()
-    syncSettingsToWatch(context, prepSeconds)
 }
 
 fun getSavedPrepTime(context: Context): Int {
@@ -306,8 +278,6 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
             isHealthConnected = true
             saveHealthConnectedState(context, true)
         }
-        // Invia le impostazioni correnti all'orologio all'avvio dell'app
-        syncSettingsToWatch(context, getSavedPrepTime(context))
     }
 
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -363,19 +333,25 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    // Tempo selezionato dall'utente (in secondi). Default 10 min (600s). -1 = Infinito.
     var selectedTimeInSeconds by remember { mutableStateOf(getSavedSelectedTime(context)) }
     
+    // Tempo di preparazione prima del Gong iniziale
     var prepTimeSeconds by remember { mutableStateOf(getSavedPrepTime(context)) }
     var isPreparing by remember { mutableStateOf(false) }
     var prepTimeLeftSeconds by remember { mutableStateOf(0) }
 
+    // Tempo attuale che scorre
     var timeLeftInSeconds by remember { mutableStateOf(selectedTimeInSeconds) }
     
+    // STATI TEMPO EXTRA (OVERTIME)
     var isOvertime by remember { mutableStateOf(false) }
     var overtimeSeconds by remember { mutableStateOf(0) }
 
+    // Stato del timer
     var isTimerRunning by remember { mutableStateOf(false) }
 
+    // Registrazione orario inizio
     var sessionStartTime by remember { mutableStateOf<Instant?>(null) }
 
     fun updateTimeSelection(newTime: Int) {
@@ -393,6 +369,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
     val overtimeColor = Color(0xFFE5A93C)
 
+    // Motore del timer basato su TIMESTAMP con TEMPO EXTRA (OVERTIME)
     LaunchedEffect(isTimerRunning) {
         if (isTimerRunning) {
             enableDoNotDisturb(context)
@@ -440,6 +417,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                         if (remaining > 0) {
                             timeLeftInSeconds = remaining
                         } else {
+                            // TIMER FINITO -> PASSA AUTOMATICAMENTE A TEMPO EXTRA!
                             timeLeftInSeconds = 0
                             isOvertime = true
                             overtimeSeconds = 0
@@ -449,6 +427,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                             }
                         }
                     } else {
+                        // MODALITÀ TEMPO EXTRA (OVERTIME)
                         val overtimeStartRealtime = startRealtime + (initialSeconds * 1000L)
                         val extraSec = ((SystemClock.elapsedRealtime() - overtimeStartRealtime) / 1000L).toInt()
                         overtimeSeconds = extraSec.coerceAtLeast(0)
@@ -477,6 +456,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
     val isInitialState = !isTimerRunning && !isOvertime && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
 
+    // Funzione di salvataggio sessione
     fun saveAndFinishSession(includeExtra: Boolean) {
         val start = sessionStartTime ?: Instant.now()
         val plannedSec = if (selectedTimeInSeconds > 0) selectedTimeInSeconds else timeLeftInSeconds
@@ -710,6 +690,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        // 1. Salva includendo il Tempo Extra
                         Button(
                             onClick = { saveAndFinishSession(includeExtra = true) },
                             shape = RoundedCornerShape(28.dp),
@@ -725,6 +706,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                             )
                         }
 
+                        // 2. Tasti affiancati: Resetta oppure Salva solo Tempo Previsto
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
