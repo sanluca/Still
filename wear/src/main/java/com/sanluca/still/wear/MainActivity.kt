@@ -4,8 +4,6 @@ import android.app.Activity
 import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
 import android.os.Bundle
 import android.os.PowerManager
 import android.os.SystemClock
@@ -38,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,10 +50,9 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
-import kotlin.math.exp
-import kotlin.math.sin
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,6 +66,7 @@ class MainActivity : ComponentActivity() {
 private const val PREFS_NAME = "still_wear_prefs"
 private const val KEY_PREP_TIME = "prep_time_seconds"
 private const val KEY_AUTO_DND = "auto_dnd_enabled"
+private const val KEY_GONG_FREQ = "gong_frequency_hz"
 private const val KEY_PENDING_SESSIONS = "pending_watch_sessions"
 
 fun getSavedPrepTime(context: Context): Int {
@@ -90,25 +89,31 @@ fun saveAutoDnd(context: Context, enabled: Boolean) {
     prefs.edit().putBoolean(KEY_AUTO_DND, enabled).apply()
 }
 
+fun getSavedGongFrequency(context: Context): Double {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getFloat(KEY_GONG_FREQ, 432.0f).toDouble()
+}
+
+fun saveGongFrequency(context: Context, freqHz: Double) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putFloat(KEY_GONG_FREQ, freqHz.toFloat()).apply()
+}
+
 fun enableDoNotDisturbOnWatch(context: Context) {
-    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    if (notificationManager.isNotificationPolicyAccessGranted) {
-        try {
-            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+    try {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+    } catch (e: Exception) {
+        e.printStackTrace()
     }
 }
 
 fun disableDoNotDisturbOnWatch(context: Context) {
-    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    if (notificationManager.isNotificationPolicyAccessGranted) {
-        try {
-            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+    try {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+    } catch (e: Exception) {
+        e.printStackTrace()
     }
 }
 
@@ -193,11 +198,13 @@ fun triggerHapticGong(context: Context) {
 @Composable
 fun WearMeditationApp() {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     var selectedTimeInSeconds by remember { mutableStateOf(300) } // Default 5 min
     
     var prepTimeSeconds by remember { mutableStateOf(getSavedPrepTime(context)) }
     var autoDndEnabled by remember { mutableStateOf(getSavedAutoDnd(context)) }
+    var gongFreqHz by remember { mutableStateOf(getSavedGongFrequency(context)) }
 
     var isPreparing by remember { mutableStateOf(false) }
     var prepTimeLeftSeconds by remember { mutableStateOf(0) }
@@ -287,7 +294,7 @@ fun WearMeditationApp() {
                     sessionStartTime = Instant.now()
                     triggerHapticGong(context)
                     withContext(Dispatchers.Default) {
-                        playGongSound()
+                        playGongSound(gongFreqHz, repeatCount = 1)
                     }
                 }
 
@@ -311,7 +318,7 @@ fun WearMeditationApp() {
                             
                             triggerHapticGong(context)
                             withContext(Dispatchers.Default) {
-                                playGongSound()
+                                playGongSound(gongFreqHz, repeatCount = 3) // 3 Gong finali Vipassana
                             }
                         }
                     } else {
@@ -551,7 +558,60 @@ fun WearMeditationApp() {
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                // 2. REGOLAZIONE TEMPO PREPARAZIONE (Prep)
+                // 2. FREQUENZA CAMPANA TIBETANA SULL'OROLOGIO
+                item {
+                    Text("Suono Gong:", fontSize = 10.sp, color = Color.Gray)
+                }
+
+                item {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    ) {
+                        FilterChip(
+                            selected = gongFreqHz == 432.0,
+                            onClick = { 
+                                gongFreqHz = 432.0
+                                saveGongFrequency(context, 432.0)
+                                coroutineScope.launch(Dispatchers.Default) {
+                                    playGongSound(432.0, repeatCount = 1)
+                                }
+                            },
+                            label = { Text("432Hz", fontSize = 10.sp) }
+                        )
+
+                        FilterChip(
+                            selected = gongFreqHz == 528.0,
+                            onClick = { 
+                                gongFreqHz = 528.0
+                                saveGongFrequency(context, 528.0)
+                                coroutineScope.launch(Dispatchers.Default) {
+                                    playGongSound(528.0, repeatCount = 1)
+                                }
+                            },
+                            label = { Text("528Hz", fontSize = 10.sp) }
+                        )
+
+                        FilterChip(
+                            selected = gongFreqHz == 216.0,
+                            onClick = { 
+                                gongFreqHz = 216.0
+                                saveGongFrequency(context, 216.0)
+                                coroutineScope.launch(Dispatchers.Default) {
+                                    playGongSound(216.0, repeatCount = 1)
+                                }
+                            },
+                            label = { Text("216Hz", fontSize = 10.sp) }
+                        )
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                // 3. REGOLAZIONE TEMPO PREPARAZIONE (Prep)
                 item {
                     Text("Preparazione (Gong): ${prepTimeSeconds}s", fontSize = 10.sp, color = prepColor)
                 }
@@ -591,7 +651,7 @@ fun WearMeditationApp() {
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                // 3. TASTO COMPATTO NON DISTURBARE (Senza icone per risparmiare spazio)
+                // 4. TASTO COMPATTO NON DISTURBARE (Senza icone per risparmiare spazio)
                 item {
                     OutlinedButton(
                         onClick = { 
@@ -610,53 +670,6 @@ fun WearMeditationApp() {
                 }
             }
         }
-    }
-}
-
-fun playGongSound() {
-    val sampleRate = 44100
-    val durationSeconds = 3.5
-    val numSamples = (durationSeconds * sampleRate).toInt()
-    val buffer = ShortArray(numSamples)
-
-    val freqFundamental = 432.0
-
-    for (i in 0 until numSamples) {
-        val t = i.toDouble() / sampleRate
-        val envelope = exp(-1.2 * t)
-        
-        val wave = 0.6 * sin(2.0 * Math.PI * freqFundamental * t) +
-                   0.25 * sin(2.0 * Math.PI * freqFundamental * 2.01 * t) +
-                   0.1 * sin(2.0 * Math.PI * freqFundamental * 3.02 * t) +
-                   0.05 * sin(2.0 * Math.PI * freqFundamental * 4.03 * t)
-
-        val value = (wave * envelope * 32767).toInt()
-        buffer[i] = value.coerceIn(-32768, 32767).toShort()
-    }
-
-    try {
-        val audioTrack = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(numSamples * 2)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .build()
-
-        audioTrack.write(buffer, 0, numSamples)
-        audioTrack.play()
-    } catch (e: Exception) {
-        e.printStackTrace()
     }
 }
 
