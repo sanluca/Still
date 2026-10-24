@@ -71,13 +71,14 @@ import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
+import com.google.android.gms.wearable.PutDataMapRequest
+import com.google.android.gms.wearable.Wearable
 import com.sanluca.still.ui.theme.StillTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
-import java.time.Duration
 import java.time.Instant
 import java.util.Calendar
 import java.util.Date
@@ -103,13 +104,24 @@ class MainActivity : ComponentActivity() {
 private const val PREFS_NAME = "still_prefs"
 private const val KEY_SELECTED_TIME = "selected_time_seconds"
 private const val KEY_PREP_TIME = "prep_time_seconds"
+private const val KEY_GONG_FREQ = "gong_frequency_hz"
+private const val KEY_INTERVAL_MINS = "interval_gong_mins"
+private const val KEY_AUTO_DND = "auto_dnd_enabled"
 private const val KEY_HEALTH_CONNECTED = "health_connected"
 private const val KEY_SESSION_HISTORY = "session_history_list"
+private const val KEY_PENDING_HEALTH_SESSIONS = "pending_health_sessions"
 
 data class SessionLogEntry(
     val id: Long,
     val dateFormatted: String,
     val durationMinutes: Int,
+    val startEpochSec: Long,
+    val endEpochSec: Long,
+    val rawString: String
+)
+
+data class PendingSessionEntry(
+    val durationSec: Int,
     val startEpochSec: Long,
     val endEpochSec: Long,
     val rawString: String
@@ -125,14 +137,70 @@ fun getSavedSelectedTime(context: Context): Int {
     return prefs.getInt(KEY_SELECTED_TIME, 600) // Default 10 minuti (600s)
 }
 
+fun saveGongFrequency(context: Context, freqHz: Double) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putFloat(KEY_GONG_FREQ, freqHz.toFloat()).apply()
+}
+
+fun getSavedGongFrequency(context: Context): Double {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getFloat(KEY_GONG_FREQ, 432.0f).toDouble()
+}
+
+fun saveIntervalMins(context: Context, mins: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_INTERVAL_MINS, mins).apply()
+}
+
+fun getSavedIntervalMins(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_INTERVAL_MINS, 0)
+}
+
+fun saveAutoDnd(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_AUTO_DND, enabled).apply()
+    syncSettingsToWatch(context, getSavedPrepTime(context), enabled)
+}
+
+fun getSavedAutoDnd(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_AUTO_DND, true) // Default attivo (true)
+}
+
+fun syncSettingsToWatch(context: Context, prepSeconds: Int, autoDnd: Boolean = getSavedAutoDnd(context)) {
+    try {
+        val dndInt = if (autoDnd) 1 else 0
+        val messageClient = Wearable.getMessageClient(context)
+        val nodeClient = Wearable.getNodeClient(context)
+        nodeClient.connectedNodes.addOnSuccessListener { nodes ->
+            val payload = "$prepSeconds|$dndInt".toByteArray()
+            for (node in nodes) {
+                messageClient.sendMessage(node.id, "/update_settings", payload)
+            }
+        }
+
+        val dataClient = Wearable.getDataClient(context)
+        val putDataMapReq = PutDataMapRequest.create("/still_settings")
+        putDataMapReq.dataMap.putInt("prep_time_seconds", prepSeconds)
+        putDataMapReq.dataMap.putBoolean("auto_dnd_enabled", autoDnd)
+        putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
+        val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
+        dataClient.putDataItem(putDataReq)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
 fun savePrepTime(context: Context, prepSeconds: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_PREP_TIME, prepSeconds).apply()
+    syncSettingsToWatch(context, prepSeconds)
 }
 
 fun getSavedPrepTime(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    return prefs.getInt(KEY_PREP_TIME, 0) // Default 0 secondi
+    return prefs.getInt(KEY_PREP_TIME, 0)
 }
 
 fun saveHealthConnectedState(context: Context, isConnected: Boolean) {
@@ -143,6 +211,55 @@ fun saveHealthConnectedState(context: Context, isConnected: Boolean) {
 fun isHealthConnectedStateSaved(context: Context): Boolean {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getBoolean(KEY_HEALTH_CONNECTED, false)
+}
+
+fun savePendingWatchSession(context: Context, durationSec: Int, startInstant: Instant, endInstant: Instant) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val existingSet = prefs.getStringSet(KEY_PENDING_HEALTH_SESSIONS, emptySet()) ?: emptySet()
+    val raw = "$durationSec|${startInstant.epochSecond}|${endInstant.epochSecond}"
+    val updatedSet = existingSet.toMutableSet()
+    updatedSet.add(raw)
+    prefs.edit().putStringSet(KEY_PENDING_HEALTH_SESSIONS, updatedSet).apply()
+}
+
+fun getPendingWatchSessions(context: Context): List<PendingSessionEntry> {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val set = prefs.getStringSet(KEY_PENDING_HEALTH_SESSIONS, emptySet()) ?: emptySet()
+    return set.mapNotNull { raw ->
+        val parts = raw.split("|")
+        if (parts.size >= 3) {
+            val dur = parts[0].toIntOrNull() ?: 0
+            val start = parts[1].toLongOrNull() ?: 0L
+            val end = parts[2].toLongOrNull() ?: 0L
+            PendingSessionEntry(dur, start, end, raw)
+        } else null
+    }
+}
+
+fun clearPendingWatchSessions(context: Context, rawList: List<String>) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val existingSet = prefs.getStringSet(KEY_PENDING_HEALTH_SESSIONS, emptySet()) ?: emptySet()
+    val updatedSet = existingSet.toMutableSet()
+    updatedSet.removeAll(rawList.toSet())
+    prefs.edit().putStringSet(KEY_PENDING_HEALTH_SESSIONS, updatedSet).apply()
+}
+
+suspend fun syncPendingSessionsToHealthConnect(context: Context, healthConnectManager: HealthConnectManager) {
+    val pending = getPendingWatchSessions(context)
+    if (pending.isNotEmpty() && healthConnectManager.hasAllPermissions()) {
+        val syncedRaws = mutableListOf<String>()
+        for (session in pending) {
+            val start = Instant.ofEpochSecond(session.startEpochSec)
+            val end = Instant.ofEpochSecond(session.endEpochSec)
+            val saved = healthConnectManager.saveMeditationSession(start, end)
+            if (saved) {
+                syncedRaws.add(session.rawString)
+            }
+        }
+        if (syncedRaws.isNotEmpty()) {
+            clearPendingWatchSessions(context, syncedRaws)
+        }
+    }
 }
 
 fun addSessionToLocalHistory(context: Context, durationSeconds: Int, startInstant: Instant, endInstant: Instant) {
@@ -183,7 +300,7 @@ fun getLocalSessionHistory(context: Context): List<SessionLogEntry> {
             
             SessionLogEntry(
                 id = ts,
-                dateFormatted = sdf.format(Date(ts)),
+                dateFormatted = sdf.format(Date(startSec * 1000L)), // Mostra l'Ora di INIZIO della meditazione per allinearsi a Google Salute
                 durationMinutes = mins,
                 startEpochSec = startSec,
                 endEpochSec = endSec,
@@ -226,7 +343,6 @@ fun calculateStreakDays(history: List<SessionLogEntry>): Int {
     return streak
 }
 
-// --- FUNZIONI PER LA MODALITÀ NON DISTURBARE ---
 fun isDndPermissionGranted(context: Context): Boolean {
     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     return notificationManager.isNotificationPolicyAccessGranted
@@ -269,7 +385,6 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     
-    // Gestore per Health Connect
     val healthConnectManager = remember { HealthConnectManager(context) }
     var isHealthConnected by remember { mutableStateOf(isHealthConnectedStateSaved(context)) }
 
@@ -277,7 +392,9 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
         if (healthConnectManager.hasAllPermissions()) {
             isHealthConnected = true
             saveHealthConnectedState(context, true)
+            syncPendingSessionsToHealthConnect(context, healthConnectManager)
         }
+        syncSettingsToWatch(context, getSavedPrepTime(context))
     }
 
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -292,6 +409,9 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
         if (grantedPermissions.containsAll(healthConnectManager.permissions)) {
             isHealthConnected = true
             saveHealthConnectedState(context, true)
+            coroutineScope.launch {
+                syncPendingSessionsToHealthConnect(context, healthConnectManager)
+            }
             Toast.makeText(context, "Google Connessione Salute collegata!", Toast.LENGTH_SHORT).show()
         } else {
             isHealthConnected = false
@@ -333,25 +453,23 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    // Tempo selezionato dall'utente (in secondi). Default 10 min (600s). -1 = Infinito.
     var selectedTimeInSeconds by remember { mutableStateOf(getSavedSelectedTime(context)) }
     
-    // Tempo di preparazione prima del Gong iniziale
     var prepTimeSeconds by remember { mutableStateOf(getSavedPrepTime(context)) }
+    var gongFreqHz by remember { mutableStateOf(getSavedGongFrequency(context)) }
+    var intervalMins by remember { mutableStateOf(getSavedIntervalMins(context)) }
+    var autoDndEnabled by remember { mutableStateOf(getSavedAutoDnd(context)) }
+
     var isPreparing by remember { mutableStateOf(false) }
     var prepTimeLeftSeconds by remember { mutableStateOf(0) }
 
-    // Tempo attuale che scorre
     var timeLeftInSeconds by remember { mutableStateOf(selectedTimeInSeconds) }
     
-    // STATI TEMPO EXTRA (OVERTIME)
     var isOvertime by remember { mutableStateOf(false) }
     var overtimeSeconds by remember { mutableStateOf(0) }
 
-    // Stato del timer
     var isTimerRunning by remember { mutableStateOf(false) }
 
-    // Registrazione orario inizio
     var sessionStartTime by remember { mutableStateOf<Instant?>(null) }
 
     fun updateTimeSelection(newTime: Int) {
@@ -369,10 +487,11 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
     val overtimeColor = Color(0xFFE5A93C)
 
-    // Motore del timer basato su TIMESTAMP con TEMPO EXTRA (OVERTIME)
     LaunchedEffect(isTimerRunning) {
         if (isTimerRunning) {
-            enableDoNotDisturb(context)
+            if (autoDndEnabled) {
+                enableDoNotDisturb(context)
+            }
 
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
             val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Still::MeditationTimerWakeLock")
@@ -394,11 +513,11 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
                 if (!isTimerRunning) return@LaunchedEffect
 
-                // --- 2. INIZIO EFFETTIVO MEDITAZIONE E GONG ---
+                // --- 2. INIZIO EFFETTIVO MEDITAZIONE E GONG INIZIALE ---
                 if (sessionStartTime == null) {
                     sessionStartTime = Instant.now()
                     withContext(Dispatchers.Default) {
-                        playGongSound()
+                        playGongSound(gongFreqHz, repeatCount = 1)
                     }
                 }
 
@@ -410,6 +529,13 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                     
                     val elapsedSeconds = ((SystemClock.elapsedRealtime() - startRealtime) / 1000L).toInt()
 
+                    // --- CAMPANA INTERMEDIA (INTERVAL GONG) ---
+                    if (intervalMins > 0 && elapsedSeconds > 0 && elapsedSeconds % (intervalMins * 60) == 0 && (elapsedSeconds * 1000L % 1000L < 600L)) {
+                        withContext(Dispatchers.Default) {
+                            playGongSound(gongFreqHz, repeatCount = 1)
+                        }
+                    }
+
                     if (selectedTimeInSeconds == -1) {
                         timeLeftInSeconds = initialSeconds + elapsedSeconds
                     } else if (!isOvertime) {
@@ -417,31 +543,34 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                         if (remaining > 0) {
                             timeLeftInSeconds = remaining
                         } else {
-                            // TIMER FINITO -> PASSA AUTOMATICAMENTE A TEMPO EXTRA!
                             timeLeftInSeconds = 0
                             isOvertime = true
                             overtimeSeconds = 0
                             
+                            // 3 GONG FINALI VIPASSANA
                             withContext(Dispatchers.Default) {
-                                playGongSound()
+                                playGongSound(gongFreqHz, repeatCount = 3)
                             }
                         }
                     } else {
-                        // MODALITÀ TEMPO EXTRA (OVERTIME)
                         val overtimeStartRealtime = startRealtime + (initialSeconds * 1000L)
                         val extraSec = ((SystemClock.elapsedRealtime() - overtimeStartRealtime) / 1000L).toInt()
                         overtimeSeconds = extraSec.coerceAtLeast(0)
                     }
                 }
             } finally {
-                disableDoNotDisturb(context)
+                if (autoDndEnabled) {
+                    disableDoNotDisturb(context)
+                }
                 if (wakeLock.isHeld) {
                     wakeLock.release()
                 }
             }
         } else {
             isPreparing = false
-            disableDoNotDisturb(context)
+            if (autoDndEnabled) {
+                disableDoNotDisturb(context)
+            }
         }
     }
 
@@ -456,7 +585,6 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
     val isInitialState = !isTimerRunning && !isOvertime && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
 
-    // Funzione di salvataggio sessione
     fun saveAndFinishSession(includeExtra: Boolean) {
         val start = sessionStartTime ?: Instant.now()
         val plannedSec = if (selectedTimeInSeconds > 0) selectedTimeInSeconds else timeLeftInSeconds
@@ -465,13 +593,18 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
         if (totalSec >= 10) {
             coroutineScope.launch {
+                var savedOnHealth = false
                 if (healthConnectManager.hasAllPermissions()) {
-                    val saved = healthConnectManager.saveMeditationSession(start, end)
-                    if (saved) {
-                        addSessionToLocalHistory(context, totalSec, start, end)
-                        sessionHistoryList = getLocalSessionHistory(context)
-                        Toast.makeText(context, "Sessione di $totalSec sec salvata su Google Salute! 🧘‍♂️", Toast.LENGTH_LONG).show()
-                    }
+                    savedOnHealth = healthConnectManager.saveMeditationSession(start, end)
+                } else {
+                    savePendingWatchSession(context, totalSec, start, end)
+                }
+                addSessionToLocalHistory(context, totalSec, start, end)
+                sessionHistoryList = getLocalSessionHistory(context)
+                if (savedOnHealth) {
+                    Toast.makeText(context, "Sessione di $totalSec sec salvata su Google Salute! 🧘‍♂️", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "Sessione di $totalSec sec salvata nello storico!", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -505,6 +638,9 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                     }
                     IconButton(onClick = { 
                         sessionHistoryList = getLocalSessionHistory(context)
+                        coroutineScope.launch {
+                            syncPendingSessionsToHealthConnect(context, healthConnectManager)
+                        }
                         showStatsDialog = true 
                     }) {
                         Text("📊", fontSize = 20.sp)
@@ -690,7 +826,6 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // 1. Salva includendo il Tempo Extra
                         Button(
                             onClick = { saveAndFinishSession(includeExtra = true) },
                             shape = RoundedCornerShape(28.dp),
@@ -706,7 +841,6 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                             )
                         }
 
-                        // 2. Tasti affiancati: Resetta oppure Salva solo Tempo Previsto
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -785,6 +919,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
         // --- DIALOG IMPOSTAZIONI ---
         if (showSettingsDialog) {
             var prepInputText by remember { mutableStateOf(prepTimeSeconds.toString()) }
+            var intervalInputText by remember { mutableStateOf(intervalMins.toString()) }
             val dndGranted = remember { isDndPermissionGranted(context) }
 
             AlertDialog(
@@ -792,6 +927,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                 title = @Composable { Text(text = "Impostazioni Still ⚙️") },
                 text = @Composable {
                     Column(modifier = Modifier.fillMaxWidth()) {
+                        // 1. RITARDO PREPARAZIONE
                         Text(
                             text = "Ritardo di Preparazione (prima del Gong):",
                             style = MaterialTheme.typography.titleSmall
@@ -817,24 +953,104 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
                         Spacer(modifier = Modifier.height(16.dp))
 
+                        // 2. FREQUENZA CAMPANA TIBETANA (CON ANTEPRIMA AUDIO AL TAP)
                         Text(
-                            text = "Modalità Non Disturbare:",
+                            text = "Suono Campana Tibetana / Gong (Tocco per anteprima):",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilterChip(
+                                selected = gongFreqHz == 432.0,
+                                onClick = { 
+                                    gongFreqHz = 432.0
+                                    saveGongFrequency(context, 432.0)
+                                    coroutineScope.launch(Dispatchers.Default) {
+                                        playGongSound(432.0, repeatCount = 1)
+                                    }
+                                },
+                                label = { Text("432 Hz 🔔", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = gongFreqHz == 528.0,
+                                onClick = { 
+                                    gongFreqHz = 528.0
+                                    saveGongFrequency(context, 528.0)
+                                    coroutineScope.launch(Dispatchers.Default) {
+                                        playGongSound(528.0, repeatCount = 1)
+                                    }
+                                },
+                                label = { Text("528 Hz 🔔", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = gongFreqHz == 216.0,
+                                onClick = { 
+                                    gongFreqHz = 216.0
+                                    saveGongFrequency(context, 216.0)
+                                    coroutineScope.launch(Dispatchers.Default) {
+                                        playGongSound(216.0, repeatCount = 1)
+                                    }
+                                },
+                                label = { Text("216 Hz 🔔", fontSize = 11.sp) }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // 3. CAMPANE INTERMEDIE EDITABILI
+                        Text(
+                            text = "Campana Intermedia (ogni X min):",
                             style = MaterialTheme.typography.titleSmall
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         
-                        if (dndGranted) {
-                            Text(
-                                text = "🌙 Attiva in automatico durante la meditazione",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        } else {
-                            OutlinedButton(
+                        OutlinedTextField(
+                            value = intervalInputText,
+                            onValueChange = { input ->
+                                if (input.all { it.isDigit() } && input.length <= 3) {
+                                    intervalInputText = input
+                                    val mins = input.toIntOrNull() ?: 0
+                                    intervalMins = mins
+                                    saveIntervalMins(context, mins)
+                                }
+                            },
+                            label = { Text("Minuti di intervallo (0 = Spento)") },
+                            placeholder = { Text("es. 10") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // 4. OPZIONE INTERATTIVA NON DISTURBARE
+                        Text(
+                            text = "Modalità Non Disturbare:",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        OutlinedButton(
+                            onClick = { 
+                                val newState = !autoDndEnabled
+                                autoDndEnabled = newState
+                                saveAutoDnd(context, newState)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (autoDndEnabled) "Non Disturbare in Meditazione: Attivo" else "Non Disturbare in Meditazione: Disattivato")
+                        }
+
+                        if (!dndGranted && autoDndEnabled) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            TextButton(
                                 onClick = { requestDndAccess(context) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Autorizza 'Non Disturbare' 🌙")
+                                Text("Autorizza accesso 'Non Disturbare' nel sistema", fontSize = 11.sp)
                             }
                         }
 
@@ -1044,23 +1260,21 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
     }
 }
 
-// Funzione che sintetizza via codice un suono di campana tibetana / Gong (armonica 432 Hz)
-fun playGongSound() {
+// Funzione che sintetizza via codice un suono di campana tibetana / Gong
+fun playGongSound(frequencyHz: Double = 432.0, repeatCount: Int = 1) {
     val sampleRate = 44100
     val durationSeconds = 3.5
     val numSamples = (durationSeconds * sampleRate).toInt()
     val buffer = ShortArray(numSamples)
 
-    val freqFundamental = 432.0
-
     for (i in 0 until numSamples) {
         val t = i.toDouble() / sampleRate
         val envelope = exp(-1.2 * t)
         
-        val wave = 0.6 * sin(2.0 * Math.PI * freqFundamental * t) +
-                   0.25 * sin(2.0 * Math.PI * freqFundamental * 2.01 * t) +
-                   0.1 * sin(2.0 * Math.PI * freqFundamental * 3.02 * t) +
-                   0.05 * sin(2.0 * Math.PI * freqFundamental * 4.03 * t)
+        val wave = 0.6 * sin(2.0 * Math.PI * frequencyHz * t) +
+                   0.25 * sin(2.0 * Math.PI * frequencyHz * 2.01 * t) +
+                   0.1 * sin(2.0 * Math.PI * frequencyHz * 3.02 * t) +
+                   0.05 * sin(2.0 * Math.PI * frequencyHz * 4.03 * t)
 
         val value = (wave * envelope * 32767).toInt()
         buffer[i] = value.coerceIn(-32768, 32767).toShort()
@@ -1086,7 +1300,15 @@ fun playGongSound() {
             .build()
 
         audioTrack.write(buffer, 0, numSamples)
-        audioTrack.play()
+
+        for (count in 1..repeatCount) {
+            audioTrack.stop()
+            audioTrack.reloadStaticData()
+            audioTrack.play()
+            if (repeatCount > 1 && count < repeatCount) {
+                Thread.sleep(2200L) // Pausa naturale tra i Gong del trio finale
+            }
+        }
     } catch (e: Exception) {
         e.printStackTrace()
     }

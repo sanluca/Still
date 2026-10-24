@@ -59,5 +59,11 @@ dependencies {
     implementation("androidx.wear.compose:compose-foundation:1.4.1")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
 
+    // Wear OS Tiles & Protolayout
+    implementation("androidx.wear.tiles:tiles:1.4.0")
+    implementation("androidx.wear.protolayout:protolayout:1.2.0")
+    implementation("androidx.wear.protolayout:protolayout-material:1.2.0")
+    implementation("com.google.guava:guava:33.2.1-android")
+
     debugImplementation(libs.androidx.ui.tooling)
 }

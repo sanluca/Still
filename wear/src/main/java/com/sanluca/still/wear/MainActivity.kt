@@ -1,15 +1,17 @@
 package com.sanluca.still.wear
 
+import android.app.Activity
+import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
-import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -46,7 +48,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -66,6 +67,8 @@ class MainActivity : ComponentActivity() {
 
 private const val PREFS_NAME = "still_wear_prefs"
 private const val KEY_PREP_TIME = "prep_time_seconds"
+private const val KEY_AUTO_DND = "auto_dnd_enabled"
+private const val KEY_PENDING_SESSIONS = "pending_watch_sessions"
 
 fun getSavedPrepTime(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -77,29 +80,66 @@ fun savePrepTime(context: Context, secs: Int) {
     prefs.edit().putInt(KEY_PREP_TIME, secs).apply()
 }
 
-// Invia i dati della meditazione completata dallo smartwatch al telefono via DataClient (persistente) e MessageClient
-fun sendSessionToPhone(context: Context, durationSec: Int, startInstant: Instant, endInstant: Instant) {
+fun getSavedAutoDnd(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getBoolean(KEY_AUTO_DND, true)
+}
+
+fun saveAutoDnd(context: Context, enabled: Boolean) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putBoolean(KEY_AUTO_DND, enabled).apply()
+}
+
+fun enableDoNotDisturbOnWatch(context: Context) {
+    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    if (notificationManager.isNotificationPolicyAccessGranted) {
+        try {
+            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
+
+fun disableDoNotDisturbOnWatch(context: Context) {
+    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    if (notificationManager.isNotificationPolicyAccessGranted) {
+        try {
+            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
+
+fun savePendingSessionOnWatch(context: Context, raw: String) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val existingList = prefs.getStringSet(KEY_PENDING_SESSIONS, emptySet())?.toMutableList() ?: mutableListOf()
+    if (!existingList.contains(raw)) {
+        existingList.add(raw)
+        while (existingList.size > 20) {
+            existingList.removeAt(0)
+        }
+        prefs.edit().putStringSet(KEY_PENDING_SESSIONS, existingList.toSet()).apply()
+    }
+}
+
+fun flushPendingSessionsToPhone(context: Context) {
     try {
-        val startEpochSec = startInstant.epochSecond
-        val endEpochSec = endInstant.epochSecond
-
-        // 1. Invio persistente tramite DataClient (garantisce la sincronizzazione anche se offline)
-        val dataClient = Wearable.getDataClient(context)
-        val putDataMapReq = PutDataMapRequest.create("/meditation_completed")
-        putDataMapReq.dataMap.putInt("durationSec", durationSec)
-        putDataMapReq.dataMap.putLong("startEpochSec", startEpochSec)
-        putDataMapReq.dataMap.putLong("endEpochSec", endEpochSec)
-        putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
-        val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
-        dataClient.putDataItem(putDataReq)
-
-        // 2. Messaggio istantaneo tramite MessageClient
-        val messageClient = Wearable.getMessageClient(context)
-        val nodeClient = Wearable.getNodeClient(context)
-        nodeClient.connectedNodes.addOnSuccessListener { nodes ->
-            val payload = "$durationSec|$startEpochSec|$endEpochSec".toByteArray()
-            for (node in nodes) {
-                messageClient.sendMessage(node.id, "/meditation_completed", payload)
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val pendingSet = prefs.getStringSet(KEY_PENDING_SESSIONS, emptySet()) ?: emptySet()
+        if (pendingSet.isNotEmpty()) {
+            val messageClient = Wearable.getMessageClient(context)
+            val nodeClient = Wearable.getNodeClient(context)
+            nodeClient.connectedNodes.addOnSuccessListener { nodes ->
+                if (nodes.isNotEmpty()) {
+                    for (raw in pendingSet) {
+                        for (node in nodes) {
+                            messageClient.sendMessage(node.id, "/meditation_completed", raw.toByteArray())
+                        }
+                    }
+                    prefs.edit().remove(KEY_PENDING_SESSIONS).apply()
+                }
             }
         }
     } catch (e: Exception) {
@@ -107,23 +147,43 @@ fun sendSessionToPhone(context: Context, durationSec: Int, startInstant: Instant
     }
 }
 
-// Vibrazione per l'orologio con fallback diretto di sistema
+fun sendSessionToPhone(context: Context, durationSec: Int, startInstant: Instant, endInstant: Instant) {
+    try {
+        val startEpochSec = startInstant.epochSecond
+        val endEpochSec = endInstant.epochSecond
+        val raw = "$durationSec|$startEpochSec|$endEpochSec"
+
+        val messageClient = Wearable.getMessageClient(context)
+        val nodeClient = Wearable.getNodeClient(context)
+        nodeClient.connectedNodes.addOnSuccessListener { nodes ->
+            if (nodes.isNotEmpty()) {
+                for (node in nodes) {
+                    messageClient.sendMessage(node.id, "/meditation_completed", raw.toByteArray())
+                }
+            } else {
+                savePendingSessionOnWatch(context, raw)
+            }
+        }.addOnFailureListener {
+            savePendingSessionOnWatch(context, raw)
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
 fun triggerHapticGong(context: Context) {
     try {
         val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         if (vibrator != null && vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
-                } catch (e: Exception) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(1000L, VibrationEffect.DEFAULT_AMPLITUDE))
-                }
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(1000L, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(1000L)
-            }
+            val audioAttributes = AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .build()
+
+            val timings = longArrayOf(0, 500, 200, 800)
+            val amplitudes = intArrayOf(0, 255, 0, 255)
+            val effect = VibrationEffect.createWaveform(timings, amplitudes, -1)
+            vibrator.vibrate(effect, audioAttributes)
         }
     } catch (e: Exception) {
         e.printStackTrace()
@@ -137,6 +197,8 @@ fun WearMeditationApp() {
     var selectedTimeInSeconds by remember { mutableStateOf(300) } // Default 5 min
     
     var prepTimeSeconds by remember { mutableStateOf(getSavedPrepTime(context)) }
+    var autoDndEnabled by remember { mutableStateOf(getSavedAutoDnd(context)) }
+
     var isPreparing by remember { mutableStateOf(false) }
     var prepTimeLeftSeconds by remember { mutableStateOf(0) }
 
@@ -150,12 +212,24 @@ fun WearMeditationApp() {
 
     LaunchedEffect(Unit) {
         try {
+            flushPendingSessionsToPhone(context)
+
             val messageClient = Wearable.getMessageClient(context)
             messageClient.addListener { messageEvent ->
                 if (messageEvent.path == "/update_settings") {
-                    val prepSec = String(messageEvent.data).toIntOrNull() ?: 0
-                    prepTimeSeconds = prepSec
-                    savePrepTime(context, prepSec)
+                    val raw = String(messageEvent.data)
+                    val parts = raw.split("|")
+                    if (parts.isNotEmpty()) {
+                        val prepSec = parts[0].toIntOrNull() ?: 0
+                        prepTimeSeconds = prepSec
+                        savePrepTime(context, prepSec)
+                    }
+                    if (parts.size >= 2) {
+                        val dndVal = parts[1].toIntOrNull() ?: 1
+                        val dndBool = dndVal == 1
+                        autoDndEnabled = dndBool
+                        saveAutoDnd(context, dndBool)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -181,7 +255,13 @@ fun WearMeditationApp() {
     val prepColor = Color(0xFF80CBC4)
 
     LaunchedEffect(isTimerRunning) {
+        val activity = context as? Activity
         if (isTimerRunning) {
+            if (autoDndEnabled) {
+                enableDoNotDisturbOnWatch(context)
+            }
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
             val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "StillWear::TimerWakeLock")
             
@@ -241,11 +321,19 @@ fun WearMeditationApp() {
                     }
                 }
             } finally {
+                if (autoDndEnabled) {
+                    disableDoNotDisturbOnWatch(context)
+                }
+                activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 if (wakeLock.isHeld) {
                     wakeLock.release()
                 }
             }
         } else {
+            if (autoDndEnabled) {
+                disableDoNotDisturbOnWatch(context)
+            }
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             isPreparing = false
         }
     }
@@ -409,7 +497,7 @@ fun WearMeditationApp() {
                 }
             }
 
-            // ================= PAGINA 2: IMPOSTAZIONI DURATA E PREPARAZIONE =================
+            // ================= PAGINA 2: IMPOSTAZIONI DURATA, PREPARAZIONE E NON DISTURBARE =================
             if (!isTimerRunning && !isOvertime) {
                 item {
                     Spacer(modifier = Modifier.height(20.dp))
@@ -500,6 +588,24 @@ fun WearMeditationApp() {
                 }
 
                 item {
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                // 3. TASTO COMPATTO NON DISTURBARE (Senza icone per risparmiare spazio)
+                item {
+                    OutlinedButton(
+                        onClick = { 
+                            val newState = !autoDndEnabled
+                            autoDndEnabled = newState
+                            saveAutoDnd(context, newState)
+                        },
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text(if (autoDndEnabled) "Non Disturbare: ON" else "Non Disturbare: OFF", fontSize = 10.sp)
+                    }
+                }
+
+                item {
                     Spacer(modifier = Modifier.height(20.dp))
                 }
             }
@@ -532,8 +638,8 @@ fun playGongSound() {
         val audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             )
             .setAudioFormat(

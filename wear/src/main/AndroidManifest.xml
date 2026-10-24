@@ -28,6 +28,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Service per la Scheda di Lancio Rapido (Wear OS Tile) dell'orologio -->
+        <service
+            android:name=".StillTileService"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/still_icon" />
+        </service>
     </application>
 
 </manifest>
