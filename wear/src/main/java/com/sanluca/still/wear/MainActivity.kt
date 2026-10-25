@@ -346,10 +346,10 @@ fun WearMeditationApp() {
     }
 
     fun saveAndFinishSession(includeExtra: Boolean) {
-        val start = sessionStartTime ?: Instant.now()
         val plannedSec = if (selectedTimeInSeconds > 0) selectedTimeInSeconds else timeLeftInSeconds
         val totalSec = if (includeExtra && isOvertime) (plannedSec + overtimeSeconds) else plannedSec
-        val end = start.plusSeconds(totalSec.toLong())
+        val end = Instant.now()
+        val start = end.minusSeconds(totalSec.toLong())
 
         if (totalSec >= 10) {
             sendSessionToPhone(context, totalSec, start, end)
@@ -649,20 +649,6 @@ fun WearMeditationApp() {
 
                 item {
                     Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                // 4. TASTO COMPATTO NON DISTURBARE (Senza icone per risparmiare spazio)
-                item {
-                    OutlinedButton(
-                        onClick = { 
-                            val newState = !autoDndEnabled
-                            autoDndEnabled = newState
-                            saveAutoDnd(context, newState)
-                        },
-                        modifier = Modifier.height(34.dp)
-                    ) {
-                        Text(if (autoDndEnabled) "Non Disturbare: ON" else "Non Disturbare: OFF", fontSize = 10.sp)
-                    }
                 }
 
                 item {

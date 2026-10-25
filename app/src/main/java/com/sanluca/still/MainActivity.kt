@@ -581,10 +581,10 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
     val isInitialState = !isTimerRunning && !isOvertime && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
 
     fun saveAndFinishSession(includeExtra: Boolean) {
-        val start = sessionStartTime ?: Instant.now()
         val plannedSec = if (selectedTimeInSeconds > 0) selectedTimeInSeconds else timeLeftInSeconds
         val totalSec = if (includeExtra && isOvertime) (plannedSec + overtimeSeconds) else plannedSec
-        val end = start.plusSeconds(totalSec.toLong())
+        val end = Instant.now()
+        val start = end.minusSeconds(totalSec.toLong())
 
         if (totalSec >= 10) {
             coroutineScope.launch {

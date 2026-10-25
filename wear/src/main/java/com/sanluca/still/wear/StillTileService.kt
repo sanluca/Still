@@ -32,7 +32,7 @@ class StillTileService : TileService() {
 
         return Futures.immediateFuture(
             TileBuilders.Tile.Builder()
-                .setResourcesVersion("6")
+                .setResourcesVersion("7")
                 .setTileTimeline(singleTileTimeline)
                 .build()
         )
@@ -41,7 +41,7 @@ class StillTileService : TileService() {
     override fun onTileResourcesRequest(requestParams: RequestBuilders.ResourcesRequest): ListenableFuture<ResourceBuilders.Resources> {
         return Futures.immediateFuture(
             ResourceBuilders.Resources.Builder()
-                .setVersion("6")
+                .setVersion("7")
                 .addIdToImageMapping(
                     "app_icon",
                     ResourceBuilders.ImageResource.Builder()
@@ -82,7 +82,7 @@ class StillTileService : TileService() {
             .setModifiers(clickableModifiers)
             .build()
 
-        // Sostituiamo PrimaryLayout con un semplice Box per aggirare i problemi di rendering
+        // Sfondo coordinato esattamente con il colore #13161D dell'immagine per fusione perfetta
         return LayoutElementBuilders.Box.Builder()
             .setWidth(expand())
             .setHeight(expand())
@@ -93,7 +93,7 @@ class StillTileService : TileService() {
                     .setClickable(clickable)
                     .setBackground(
                         ModifiersBuilders.Background.Builder()
-                            .setColor(argb(0xFF000000.toInt())) // Sfondo completamente nero forzato
+                            .setColor(argb(0xFF13161D.toInt()))
                             .build()
                     )
                     .build()
