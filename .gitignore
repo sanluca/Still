@@ -1,15 +1,31 @@
-*.iml
-.gradle
+# Gradle e directory di compilazione (radice, :app, :wear e qualsiasi sottomodulo)
+.gradle/
+build/
+**/build/
+
+# Binari, pacchetti compilati e bytecode
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+
+# Configurazioni locali e SDK path
+local.properties
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
+
+# Android Studio / IntelliJ IDEA
+*.iml
+.idea/
+/.idea/
 /captures
 .externalNativeBuild
 .cxx
-local.properties
+
+# Chiavi crittografiche e certificati di firma (Play Store)
+*.jks
+*.keystore
+
+# File generati dai sistemi operativi
+.DS_Store
+Thumbs.db
