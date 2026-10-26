@@ -3,6 +3,7 @@ package com.sanluca.still.wear
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import kotlinx.coroutines.delay
 import kotlin.math.exp
 import kotlin.math.sin
 
@@ -10,7 +11,7 @@ import kotlin.math.sin
  * Utility audio per l'orologio (Wear OS / Pixel Watch): supporta le 3 frequenze (432 Hz, 528 Hz, 216 Hz)
  * e i 3 Gong di chiusura, forzando la riproduzione tramite USAGE_ALARM e CONTENT_TYPE_SONIFICATION dall'altoparlante.
  */
-fun playGongSound(frequencyHz: Double = 432.0, repeatCount: Int = 1) {
+suspend fun playGongSound(frequencyHz: Double = 432.0, repeatCount: Int = 1) {
     val sampleRate = 44100
     val durationSeconds = 3.5
     val numSamples = (durationSeconds * sampleRate).toInt()
@@ -29,8 +30,9 @@ fun playGongSound(frequencyHz: Double = 432.0, repeatCount: Int = 1) {
         buffer[i] = value.coerceIn(-32768, 32767).toShort()
     }
 
+    var audioTrack: AudioTrack? = null
     try {
-        val audioTrack = AudioTrack.Builder()
+        audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ALARM)
@@ -55,10 +57,16 @@ fun playGongSound(frequencyHz: Double = 432.0, repeatCount: Int = 1) {
             audioTrack.reloadStaticData()
             audioTrack.play()
             if (repeatCount > 1 && count < repeatCount) {
-                Thread.sleep(2200L) // Pausa naturale tra un Gong e l'altro nel trio finale
+                delay(2200L) // Pausa naturale tra un Gong e l'altro nel trio finale
             }
         }
+        delay((durationSeconds * 1000).toLong())
     } catch (e: Exception) {
         e.printStackTrace()
+    } finally {
+        try {
+            audioTrack?.stop()
+        } catch (e: Exception) {}
+        audioTrack?.release()
     }
 }
