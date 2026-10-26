@@ -1,6 +1,8 @@
 package com.sanluca.still.wear
 
 import android.app.Activity
+import android.content.Intent
+import android.provider.Settings
 import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
@@ -102,6 +104,12 @@ fun saveGongFrequency(context: Context, freqHz: Double) {
 fun enableDoNotDisturbOnWatch(context: Context) {
     try {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (!notificationManager.isNotificationPolicyAccessGranted) {
+            val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            return
+        }
         notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
     } catch (e: Exception) {
         e.printStackTrace()
@@ -111,6 +119,9 @@ fun enableDoNotDisturbOnWatch(context: Context) {
 fun disableDoNotDisturbOnWatch(context: Context) {
     try {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (!notificationManager.isNotificationPolicyAccessGranted) {
+            return
+        }
         notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
     } catch (e: Exception) {
         e.printStackTrace()
@@ -346,7 +357,7 @@ fun WearMeditationApp() {
     }
 
     fun saveAndFinishSession(includeExtra: Boolean) {
-        val plannedSec = if (selectedTimeInSeconds > 0) selectedTimeInSeconds else timeLeftInSeconds
+        val plannedSec = if (selectedTimeInSeconds > 0) (selectedTimeInSeconds - timeLeftInSeconds) else timeLeftInSeconds
         val totalSec = if (includeExtra && isOvertime) (plannedSec + overtimeSeconds) else plannedSec
         val end = Instant.now()
         val start = end.minusSeconds(totalSec.toLong())

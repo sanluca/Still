@@ -8,13 +8,12 @@
     <!-- Permesso WakeLock per mantenere attivo il processore a schermo spento durante la meditazione -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Permessi per il servizio in background (Timer a schermo spento) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
     <!-- Permessi ufficiali Android 14+ (System Health Connect) -->
     <uses-permission android:name="android.permission.health.WRITE_MINDFULNESS" />
-    <uses-permission android:name="android.permission.health.READ_MINDFULNESS" />
-
-    <!-- Permessi di compatibilità per Android 13 e precedenti / App Health Connect -->
-    <uses-permission android:name="androidx.health.permission.Mindfulness.WRITE" />
-    <uses-permission android:name="androidx.health.permission.Mindfulness.READ" />
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
@@ -61,6 +60,11 @@
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/meditation_completed" />
             </intent-filter>
         </service>
+
+        <service
+            android:name=".StillTimerService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
     </application>
 
 </manifest>

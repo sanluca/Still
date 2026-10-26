@@ -1,8 +1,12 @@
 package com.sanluca.still
 
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
+import kotlinx.coroutines.delay
 import kotlin.math.exp
 import kotlin.math.sin
 
@@ -10,7 +14,7 @@ import kotlin.math.sin
  * Utility per la sintesi audio ad alta fedeltà della campana tibetana / Gong (frequenza armonica 432 Hz / 528 Hz / 216 Hz).
  * Genera un'onda sinusoidale PCM a 16-bit con decadimento esponenziale naturale.
  */
-fun playGongSound(frequencyHz: Double = 432.0, repeatCount: Int = 1) {
+suspend fun playGongSound(context: Context, frequencyHz: Double = 432.0, repeatCount: Int = 1) {
     val sampleRate = 44100
     val durationSeconds = 3.5
     val numSamples = (durationSeconds * sampleRate).toInt()
@@ -29,8 +33,20 @@ fun playGongSound(frequencyHz: Double = 432.0, repeatCount: Int = 1) {
         buffer[i] = value.coerceIn(-32768, 32767).toShort()
     }
 
+    var audioTrack: AudioTrack? = null
+    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+        )
+        .build()
+
     try {
-        val audioTrack = AudioTrack.Builder()
+        audioManager.requestAudioFocus(focusRequest)
+        audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -55,10 +71,17 @@ fun playGongSound(frequencyHz: Double = 432.0, repeatCount: Int = 1) {
             audioTrack.reloadStaticData()
             audioTrack.play()
             if (repeatCount > 1 && count < repeatCount) {
-                Thread.sleep(2200L) // Pausa naturale tra un Gong e l'altro nel trio finale Vipassana
+                delay(2200L) // Pausa naturale tra un Gong e l'altro nel trio finale Vipassana
             }
         }
+        delay((durationSeconds * 1000).toLong())
     } catch (e: Exception) {
         e.printStackTrace()
+    } finally {
+        try {
+            audioTrack?.stop()
+        } catch (e: Exception) {}
+        audioTrack?.release()
+        audioManager.abandonAudioFocusRequest(focusRequest)
     }
 }

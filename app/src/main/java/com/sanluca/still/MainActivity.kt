@@ -484,16 +484,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
     LaunchedEffect(isTimerRunning) {
         if (isTimerRunning) {
-            if (autoDndEnabled) {
-                enableDoNotDisturb(context)
-            }
-
-            val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-            val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Still::MeditationTimerWakeLock")
-            
             try {
-                wakeLock.acquire(12 * 60 * 60 * 1000L)
-
                 // --- 1. CONTO ALLA ROVESCIA DI PREPARAZIONE ---
                 if (sessionStartTime == null && prepTimeSeconds > 0) {
                     isPreparing = true
@@ -508,12 +499,18 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
                 if (!isTimerRunning) return@LaunchedEffect
 
-                // --- 2. INIZIO EFFETTIVO MEDITAZIONE E GONG INIZIALE ---
+                // --- 2. INIZIO EFFETTIVO MEDITAZIONE ---
                 if (sessionStartTime == null) {
                     sessionStartTime = Instant.now()
-                    withContext(Dispatchers.Default) {
-                        playGongSound(gongFreqHz, repeatCount = 1)
+
+                    val serviceIntent = Intent(context, StillTimerService::class.java).apply {
+                        action = "START"
+                        putExtra("FREQ", gongFreqHz)
+                        putExtra("INTERVAL", intervalMins)
+                        putExtra("TIME", selectedTimeInSeconds)
+                        putExtra("DND", autoDndEnabled)
                     }
+                    context.startForegroundService(serviceIntent)
                 }
 
                 val initialSeconds = timeLeftInSeconds
@@ -523,13 +520,6 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                     delay(500L)
                     
                     val elapsedSeconds = ((SystemClock.elapsedRealtime() - startRealtime) / 1000L).toInt()
-
-                    // --- CAMPANA INTERMEDIA (INTERVAL GONG) ---
-                    if (intervalMins > 0 && elapsedSeconds > 0 && elapsedSeconds % (intervalMins * 60) == 0 && (elapsedSeconds * 1000L % 1000L < 600L)) {
-                        withContext(Dispatchers.Default) {
-                            playGongSound(gongFreqHz, repeatCount = 1)
-                        }
-                    }
 
                     if (selectedTimeInSeconds == -1) {
                         timeLeftInSeconds = initialSeconds + elapsedSeconds
@@ -541,11 +531,6 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                             timeLeftInSeconds = 0
                             isOvertime = true
                             overtimeSeconds = 0
-                            
-                            // 3 GONG FINALI VIPASSANA
-                            withContext(Dispatchers.Default) {
-                                playGongSound(gongFreqHz, repeatCount = 3)
-                            }
                         }
                     } else {
                         val overtimeStartRealtime = startRealtime + (initialSeconds * 1000L)
@@ -554,18 +539,14 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                     }
                 }
             } finally {
-                if (autoDndEnabled) {
-                    disableDoNotDisturb(context)
-                }
-                if (wakeLock.isHeld) {
-                    wakeLock.release()
-                }
+                // Background service handles DND and WakeLock cleanup
             }
         } else {
             isPreparing = false
-            if (autoDndEnabled) {
-                disableDoNotDisturb(context)
+            val stopIntent = Intent(context, StillTimerService::class.java).apply {
+                action = "STOP"
             }
+            context.startService(stopIntent)
         }
     }
 
@@ -581,7 +562,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
     val isInitialState = !isTimerRunning && !isOvertime && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
 
     fun saveAndFinishSession(includeExtra: Boolean) {
-        val plannedSec = if (selectedTimeInSeconds > 0) selectedTimeInSeconds else timeLeftInSeconds
+        val plannedSec = if (selectedTimeInSeconds > 0) (selectedTimeInSeconds - timeLeftInSeconds) else timeLeftInSeconds
         val totalSec = if (includeExtra && isOvertime) (plannedSec + overtimeSeconds) else plannedSec
         val end = Instant.now()
         val start = end.minusSeconds(totalSec.toLong())
@@ -964,7 +945,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                     gongFreqHz = 432.0
                                     saveGongFrequency(context, 432.0)
                                     coroutineScope.launch(Dispatchers.Default) {
-                                        playGongSound(432.0, repeatCount = 1)
+                                    playGongSound(context, 432.0, repeatCount = 1)
                                     }
                                 },
                                 label = { Text("432 Hz 🔔", fontSize = 11.sp) }
@@ -975,7 +956,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                     gongFreqHz = 528.0
                                     saveGongFrequency(context, 528.0)
                                     coroutineScope.launch(Dispatchers.Default) {
-                                        playGongSound(528.0, repeatCount = 1)
+                                    playGongSound(context, 528.0, repeatCount = 1)
                                     }
                                 },
                                 label = { Text("528 Hz 🔔", fontSize = 11.sp) }
@@ -986,7 +967,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                     gongFreqHz = 216.0
                                     saveGongFrequency(context, 216.0)
                                     coroutineScope.launch(Dispatchers.Default) {
-                                        playGongSound(216.0, repeatCount = 1)
+                                    playGongSound(context, 216.0, repeatCount = 1)
                                     }
                                 },
                                 label = { Text("216 Hz 🔔", fontSize = 11.sp) }
