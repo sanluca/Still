@@ -11,6 +11,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -105,6 +106,8 @@ fun enableDoNotDisturbOnWatch(context: Context) {
     try {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (!notificationManager.isNotificationPolicyAccessGranted) {
+            Log.d("StillDebug", "DND non autorizzato su WearOS. Apertura Impostazioni.")
+            Toast.makeText(context, "Autorizza Non Disturbare nelle impostazioni dell'orologio", Toast.LENGTH_LONG).show()
             val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
@@ -357,7 +360,11 @@ fun WearMeditationApp() {
     }
 
     fun saveAndFinishSession(includeExtra: Boolean) {
-        val plannedSec = if (selectedTimeInSeconds > 0) (selectedTimeInSeconds - timeLeftInSeconds) else timeLeftInSeconds
+        val plannedSec = if (selectedTimeInSeconds > 0) {
+            if (isOvertime) selectedTimeInSeconds else (selectedTimeInSeconds - timeLeftInSeconds)
+        } else {
+            timeLeftInSeconds
+        }
         val totalSec = if (includeExtra && isOvertime) (plannedSec + overtimeSeconds) else plannedSec
         val end = Instant.now()
         val start = end.minusSeconds(totalSec.toLong())

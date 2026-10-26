@@ -562,7 +562,11 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
     val isInitialState = !isTimerRunning && !isOvertime && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
 
     fun saveAndFinishSession(includeExtra: Boolean) {
-        val plannedSec = if (selectedTimeInSeconds > 0) (selectedTimeInSeconds - timeLeftInSeconds) else timeLeftInSeconds
+        val plannedSec = if (selectedTimeInSeconds > 0) {
+            if (isOvertime) selectedTimeInSeconds else (selectedTimeInSeconds - timeLeftInSeconds)
+        } else {
+            timeLeftInSeconds
+        }
         val totalSec = if (includeExtra && isOvertime) (plannedSec + overtimeSeconds) else plannedSec
         val end = Instant.now()
         val start = end.minusSeconds(totalSec.toLong())
