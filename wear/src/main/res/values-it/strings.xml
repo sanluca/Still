@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">Still Watch</string>
+    <string name="toast_sync_success">Sincronizzato con il telefono! 🧘‍♂️</string>
+    <string name="status_preparing">Preparati...</string>
+    <string name="status_extra">Extra ✨</string>
+    <string name="status_vipassana">Vipassana</string>
+    <string name="text_prepare">Preparati</string>
+    <string name="button_save_extra">Salva +Extra (+%1$dm)</string>
+    <string name="button_reset">Resetta</string>
+    <string name="button_only_planned">Solo Previsto</string>
+    <string name="button_pause">Pausa</string>
+    <string name="button_start">Inizia</string>
+    <string name="settings_title">⚙️ Impostazioni</string>
+    <string name="settings_duration">Durata Meditazione:</string>
+    <string name="settings_gong_sound">Suono Gong:</string>
+    <string name="settings_prep_time">Preparazione (Gong): %1$ds</string>
+    <string name="settings_app_version">Versione App: 1.0 (Vipassana Timer)</string>
+    <string name="status_timer">Timer di Meditazione</string>
+</resources>

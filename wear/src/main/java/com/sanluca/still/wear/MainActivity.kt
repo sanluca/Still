@@ -33,6 +33,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,8 +48,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.sanluca.still.wear.R
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import com.google.android.gms.wearable.Wearable
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -205,6 +212,39 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
     var isTimerRunning by remember { mutableStateOf(false) }
     var sessionStartTime by remember { mutableStateOf<Instant?>(null) }
 
+    // Broadcast receiver for timer ticks
+    val receiver = remember {
+        object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == StillTimerService.ACTION_TIMER_TICK) {
+                    isPreparing = intent.getBooleanExtra(StillTimerService.EXTRA_IS_PREPARING, false)
+                    prepTimeLeftSeconds = intent.getIntExtra(StillTimerService.EXTRA_PREP_LEFT, 0)
+                    timeLeftInSeconds = intent.getIntExtra(StillTimerService.EXTRA_TIME_LEFT, 0)
+                    isOvertime = intent.getBooleanExtra(StillTimerService.EXTRA_IS_OVERTIME_STATE, false)
+                    overtimeSeconds = intent.getIntExtra(StillTimerService.EXTRA_OVERTIME_SECONDS_STATE, 0)
+                    isTimerRunning = intent.getBooleanExtra(StillTimerService.EXTRA_IS_RUNNING, false)
+                    val initialTimeState = intent.getIntExtra(StillTimerService.EXTRA_INITIAL_TIME_STATE, 300)
+                    selectedTimeInSeconds = initialTimeState
+
+                    if (sessionStartTime == null && !isPreparing && isTimerRunning) {
+                        sessionStartTime = Instant.now()
+                    }
+                }
+            }
+        }
+    }
+
+    DisposableEffect(context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, IntentFilter(StillTimerService.ACTION_TIMER_TICK), Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, IntentFilter(StillTimerService.ACTION_TIMER_TICK))
+        }
+        onDispose {
+            context.unregisterReceiver(receiver)
+        }
+    }
+
     LaunchedEffect(Unit) {
         try {
             flushPendingSessionsToPhone(context)
@@ -247,73 +287,34 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
         val activity = context as? Activity
         if (isTimerRunning) {
             activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-            val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-            val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "StillWear::TimerWakeLock")
-            
-            try {
-                wakeLock.acquire(12 * 60 * 60 * 1000L)
-
-                // --- 1. CONTO ALLA ROVESCIA DI PREPARAZIONE ---
-                if (sessionStartTime == null && prepTimeSeconds > 0) {
-                    isPreparing = true
-                    prepTimeLeftSeconds = prepTimeSeconds
-                    
-                    while (prepTimeLeftSeconds > 0 && isTimerRunning) {
-                        delay(1000L)
-                        prepTimeLeftSeconds -= 1
-                    }
-                    isPreparing = false
+            if (sessionStartTime == null) {
+                val serviceIntent = Intent(context, StillTimerService::class.java).apply {
+                    action = StillTimerService.ACTION_START
+                    putExtra(StillTimerService.EXTRA_FREQ, gongFreqHz)
+                    putExtra(StillTimerService.EXTRA_TIME, selectedTimeInSeconds)
+                    putExtra(StillTimerService.EXTRA_INITIAL_TIME, selectedTimeInSeconds)
+                    putExtra(StillTimerService.EXTRA_PREP, prepTimeSeconds)
                 }
-
-                if (!isTimerRunning) return@LaunchedEffect
-
-                // --- 2. INIZIO EFFETTIVO MEDITAZIONE CON GONG AUDIO E VIBRAZIONE ---
-                if (sessionStartTime == null) {
-                    sessionStartTime = Instant.now()
-                    triggerHapticGong(context)
-                    withContext(Dispatchers.Default) {
-                        playGongSound(gongFreqHz, repeatCount = 1)
-                    }
+                context.startForegroundService(serviceIntent)
+            } else {
+                // Resume
+                val serviceIntent = Intent(context, StillTimerService::class.java).apply {
+                    action = StillTimerService.ACTION_START
+                    putExtra(StillTimerService.EXTRA_FREQ, gongFreqHz)
+                    putExtra(StillTimerService.EXTRA_TIME, timeLeftInSeconds)
+                    putExtra(StillTimerService.EXTRA_INITIAL_TIME, selectedTimeInSeconds)
+                    putExtra(StillTimerService.EXTRA_PREP, -1) // -1 tells the service it's a resume so no start gong
+                    putExtra(StillTimerService.EXTRA_IS_OVERTIME, isOvertime)
+                    putExtra(StillTimerService.EXTRA_OVERTIME_SECONDS, overtimeSeconds)
                 }
-
-                val initialSeconds = timeLeftInSeconds
-                val startRealtime = SystemClock.elapsedRealtime()
-
-                while (isTimerRunning) {
-                    delay(500L)
-                    val elapsedSeconds = ((SystemClock.elapsedRealtime() - startRealtime) / 1000L).toInt()
-
-                    if (selectedTimeInSeconds == -1) {
-                        timeLeftInSeconds = initialSeconds + elapsedSeconds
-                    } else if (!isOvertime) {
-                        val remaining = initialSeconds - elapsedSeconds
-                        if (remaining > 0) {
-                            timeLeftInSeconds = remaining
-                        } else {
-                            timeLeftInSeconds = 0
-                            isOvertime = true
-                            overtimeSeconds = 0
-                            
-                            triggerHapticGong(context)
-                            withContext(Dispatchers.Default) {
-                                playGongSound(gongFreqHz, repeatCount = 3) // 3 Gong finali Vipassana
-                            }
-                        }
-                    } else {
-                        val overtimeStartRealtime = startRealtime + (initialSeconds * 1000L)
-                        val extraSec = ((SystemClock.elapsedRealtime() - overtimeStartRealtime) / 1000L).toInt()
-                        overtimeSeconds = extraSec.coerceAtLeast(0)
-                    }
-                }
-            } finally {
-                activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                if (wakeLock.isHeld) {
-                    wakeLock.release()
-                }
+                context.startForegroundService(serviceIntent)
             }
         } else {
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            val stopIntent = Intent(context, StillTimerService::class.java).apply {
+                action = StillTimerService.ACTION_STOP
+            }
+            context.startService(stopIntent)
             isPreparing = false
         }
     }
@@ -330,7 +331,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
 
         if (totalSec >= 10) {
             sendSessionToPhone(context, totalSec, start, end)
-            Toast.makeText(context, "Sincronizzato con il telefono! 🧘‍♂️", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_sync_success), Toast.LENGTH_SHORT).show()
         }
 
         isTimerRunning = false
@@ -357,7 +358,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
             // ================= PAGINA 1: CERCHIO E TIMER AL CENTRO OTTICO =================
             item {
                 Text(
-                    text = if (isPreparing) "Preparati..." else if (isOvertime) "Extra ✨" else "Vipassana",
+                    text = if (isPreparing) stringResource(R.string.status_preparing) else if (isOvertime) stringResource(R.string.status_extra) else stringResource(R.string.status_vipassana),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isPreparing) prepColor else if (isOvertime) overtimeColor else Color(0xFF88A0A8)
@@ -403,7 +404,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
 
                     if (isPreparing) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Preparati", fontSize = 11.sp, color = prepColor)
+                            Text(stringResource(R.string.text_prepare), fontSize = 11.sp, color = prepColor)
                             Text("${prepTimeLeftSeconds}s", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = prepColor)
                         }
                     } else {
@@ -429,7 +430,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
                             modifier = Modifier.height(34.dp).fillMaxWidth(0.9f),
                             colors = ButtonDefaults.buttonColors(containerColor = overtimeColor)
                         ) {
-                            Text("Salva +Extra (+${overtimeSeconds / 60}m)", fontSize = 10.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.button_save_extra, (overtimeSeconds / 60)), fontSize = 10.sp, color = Color.Black, fontWeight = FontWeight.Bold)
                         }
 
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -443,14 +444,14 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
                                 },
                                 modifier = Modifier.height(32.dp)
                             ) {
-                                Text("Resetta", fontSize = 10.sp)
+                                Text(stringResource(R.string.button_reset), fontSize = 10.sp)
                             }
 
                             OutlinedButton(
                                 onClick = { saveAndFinishSession(includeExtra = false) },
                                 modifier = Modifier.height(32.dp)
                             ) {
-                                Text("Solo Previsto", fontSize = 10.sp)
+                                Text(stringResource(R.string.button_only_planned), fontSize = 10.sp)
                             }
                         }
                     }
@@ -463,7 +464,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
                             onClick = { isTimerRunning = !isTimerRunning },
                             modifier = Modifier.height(38.dp)
                         ) {
-                            Text(if (isTimerRunning) "Pausa" else "Inizia", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text(if (isTimerRunning) stringResource(R.string.button_pause) else stringResource(R.string.button_start), fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
 
                         if (!isInitialState && !isTimerRunning) {
@@ -474,7 +475,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
                                 },
                                 modifier = Modifier.height(38.dp)
                             ) {
-                                Text("Resetta", fontSize = 11.sp)
+                                Text(stringResource(R.string.button_reset), fontSize = 11.sp)
                             }
                         }
                     }
@@ -490,7 +491,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
                 }
 
                 item {
-                    Text("⚙️ Impostazioni", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF88A0A8))
+                    Text(stringResource(R.string.settings_title), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF88A0A8))
                 }
 
                 item {
@@ -499,7 +500,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
 
                 // 1. REGOLAZIONE DURATA MEDITAZIONE
                 item {
-                    Text("Durata Meditazione:", fontSize = 10.sp, color = Color.Gray)
+                    Text(stringResource(R.string.settings_duration), fontSize = 10.sp, color = Color.Gray)
                 }
 
                 item {
@@ -537,7 +538,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
 
                 // 2. FREQUENZA CAMPANA TIBETANA SULL'OROLOGIO
                 item {
-                    Text("Suono Gong:", fontSize = 10.sp, color = Color.Gray)
+                    Text(stringResource(R.string.settings_gong_sound), fontSize = 10.sp, color = Color.Gray)
                 }
 
                 item {
@@ -590,7 +591,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
 
                 // 3. REGOLAZIONE TEMPO PREPARAZIONE (Prep)
                 item {
-                    Text("Preparazione (Gong): ${prepTimeSeconds}s", fontSize = 10.sp, color = prepColor)
+                    Text(stringResource(R.string.settings_prep_time, prepTimeSeconds), fontSize = 10.sp, color = prepColor)
                 }
 
                 item {
@@ -630,7 +631,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
 
                 item {
                     Text(
-                        text = "Versione App: 1.0 (Vipassana Timer)",
+                        text = stringResource(R.string.settings_app_version),
                         fontSize = 9.sp,
                         color = Color.Gray,
                         modifier = Modifier.padding(bottom = 20.dp)

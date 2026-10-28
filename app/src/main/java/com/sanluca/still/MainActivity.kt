@@ -65,6 +65,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import com.google.android.gms.wearable.PutDataMapRequest
@@ -405,11 +406,11 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
             coroutineScope.launch {
                 syncPendingSessionsToHealthConnect(context, healthConnectManager)
             }
-            Toast.makeText(context, "Google Connessione Salute collegata!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_health_connected), Toast.LENGTH_SHORT).show()
         } else {
             isHealthConnected = false
             saveHealthConnectedState(context, false)
-            Toast.makeText(context, "Permesso Connessione Salute non concesso", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_health_permission_denied), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -431,7 +432,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
             HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
                 Toast.makeText(
                     context, 
-                    "Apertura Play Store per installare/aggiornare Connessione Salute...", 
+                    context.getString(R.string.toast_health_install),
                     Toast.LENGTH_LONG
                 ).show()
                 openHealthConnectInPlayStore()
@@ -439,7 +440,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
             else -> {
                 Toast.makeText(
                     context, 
-                    "Connessione Salute non è supportata su questo dispositivo.", 
+                    context.getString(R.string.toast_health_unsupported),
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -580,9 +581,9 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                 addSessionToLocalHistory(context, totalSec, start, end)
                 sessionHistoryList = getLocalSessionHistory(context)
                 if (savedOnHealth) {
-                    Toast.makeText(context, "Sessione di $totalSec sec salvata su Google Salute! 🧘‍♂️", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, context.getString(R.string.toast_session_saved_health, totalSec), Toast.LENGTH_LONG).show()
                 } else {
-                    Toast.makeText(context, "Sessione di $totalSec sec salvata nello storico!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.toast_session_saved_history, totalSec), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -627,15 +628,15 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "Vipassana",
+                        text = stringResource(R.string.vipassana_title),
                         style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Light),
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = if (isPreparing) "Preparati a meditare..." 
-                               else if (isOvertime) "Tempo Extra di Meditazione ✨" 
-                               else if (selectedTimeInSeconds == -1) "Modalità Senza Limiti" 
-                               else "Timer di Meditazione",
+                        text = if (isPreparing) stringResource(R.string.status_preparing)
+                               else if (isOvertime) stringResource(R.string.status_overtime)
+                               else if (selectedTimeInSeconds == -1) stringResource(R.string.status_no_limit)
+                               else stringResource(R.string.status_timer),
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (isPreparing) MaterialTheme.colorScheme.tertiary 
                                 else if (isOvertime) overtimeColor 
@@ -695,7 +696,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                 if (isPreparing) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "Preparati",
+                            text = stringResource(R.string.text_prepare),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.tertiary
                         )
@@ -708,7 +709,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                 } else if (isOvertime) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "Extra",
+                            text = stringResource(R.string.text_extra),
                             style = MaterialTheme.typography.titleSmall,
                             color = overtimeColor
                         )
@@ -813,7 +814,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                             colors = ButtonDefaults.buttonColors(containerColor = overtimeColor)
                         ) {
                             Text(
-                                text = "Salva con Extra (+${(overtimeSeconds / 60)}m)",
+                                text = stringResource(R.string.button_save_with_extra, (overtimeSeconds / 60)),
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = Color.Black
                             )
@@ -833,14 +834,14 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                 },
                                 shape = RoundedCornerShape(20.dp)
                             ) {
-                                Text("Resetta")
+                                Text(stringResource(R.string.button_reset))
                             }
 
                             OutlinedButton(
                                 onClick = { saveAndFinishSession(includeExtra = false) },
                                 shape = RoundedCornerShape(20.dp)
                             ) {
-                                Text("Salva solo Previsto (${selectedTimeInSeconds / 60}m)")
+                                Text(stringResource(R.string.button_save_planned, (selectedTimeInSeconds / 60)))
                             }
                         }
                     }
@@ -859,7 +860,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                         )
                     ) {
                         Text(
-                            text = if (isTimerRunning) "Pausa" else "Inizia Meditazione",
+                            text = if (isTimerRunning) stringResource(R.string.button_pause) else stringResource(R.string.button_start_meditation),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium)
                         )
                     }
@@ -877,7 +878,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                 },
                                 shape = RoundedCornerShape(20.dp)
                             ) {
-                                Text("Resetta")
+                                Text(stringResource(R.string.button_reset))
                             }
 
                             Button(
@@ -886,7 +887,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                 },
                                 shape = RoundedCornerShape(20.dp)
                             ) {
-                                Text("Salva e Resetta")
+                                Text(stringResource(R.string.button_save_and_reset))
                             }
                         }
                     }
@@ -902,12 +903,12 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
             AlertDialog(
                 onDismissRequest = { showSettingsDialog = false },
-                title = @Composable { Text(text = "Impostazioni Still ⚙️") },
+                title = @Composable { Text(text = stringResource(R.string.dialog_settings_title)) },
                 text = @Composable {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         // 1. RITARDO PREPARAZIONE
                         Text(
-                            text = "Ritardo di Preparazione (prima del Gong):",
+                            text = stringResource(R.string.settings_prep_delay),
                             style = MaterialTheme.typography.titleSmall
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -922,8 +923,8 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                     savePrepTime(context, secs)
                                 }
                             },
-                            label = { Text("Secondi di attesa") },
-                            placeholder = { Text("es. 10") },
+                            label = { Text(stringResource(R.string.settings_prep_label)) },
+                            placeholder = { Text(stringResource(R.string.settings_prep_placeholder)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
@@ -933,7 +934,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
                         // 2. FREQUENZA CAMPANA TIBETANA (CON ANTEPRIMA AUDIO AL TAP)
                         Text(
-                            text = "Suono Campana Tibetana / Gong (Tocco per anteprima):",
+                            text = stringResource(R.string.settings_gong_sound),
                             style = MaterialTheme.typography.titleSmall
                         )
                         Spacer(modifier = Modifier.height(6.dp))
@@ -980,7 +981,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
                         // 3. CAMPANE INTERMEDIE EDITABILI
                         Text(
-                            text = "Campana Intermedia (ogni X min):",
+                            text = stringResource(R.string.settings_interval_gong),
                             style = MaterialTheme.typography.titleSmall
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -995,8 +996,8 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                     saveIntervalMins(context, mins)
                                 }
                             },
-                            label = { Text("Minuti di intervallo (0 = Spento)") },
-                            placeholder = { Text("es. 10") },
+                            label = { Text(stringResource(R.string.settings_interval_label)) },
+                            placeholder = { Text(stringResource(R.string.settings_interval_placeholder)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
@@ -1006,7 +1007,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
                         // 4. OPZIONE INTERATTIVA NON DISTURBARE
                         Text(
-                            text = "Modalità Non Disturbare:",
+                            text = stringResource(R.string.settings_dnd_mode),
                             style = MaterialTheme.typography.titleSmall
                         )
                         Spacer(modifier = Modifier.height(6.dp))
@@ -1019,7 +1020,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (autoDndEnabled) "Non Disturbare in Meditazione: Attivo" else "Non Disturbare in Meditazione: Disattivato")
+                            Text(if (autoDndEnabled) stringResource(R.string.settings_dnd_active) else stringResource(R.string.settings_dnd_inactive))
                         }
 
                         if (!dndGranted && autoDndEnabled) {
@@ -1028,19 +1029,19 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                 onClick = { requestDndAccess(context) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Autorizza accesso 'Non Disturbare' nel sistema", fontSize = 11.sp)
+                                Text(stringResource(R.string.settings_dnd_authorize), fontSize = 11.sp)
                             }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Text(
-                            text = "Stato Google Connessione Salute:",
+                            text = stringResource(R.string.settings_health_status),
                             style = MaterialTheme.typography.titleSmall
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (isHealthConnected) "✅ Collegato e Attivo" else "❌ Non collegato",
+                            text = if (isHealthConnected) stringResource(R.string.settings_health_connected) else stringResource(R.string.settings_health_disconnected),
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (isHealthConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
@@ -1051,7 +1052,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                             onClick = { connectToHealth() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (isHealthConnected) "Riconnetti / Verifica Permessi" else "Connetti a Google Salute 🏥")
+                            Text(if (isHealthConnected) stringResource(R.string.settings_health_reconnect) else stringResource(R.string.settings_health_connect))
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
@@ -1064,12 +1065,12 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("📜 Mostra Dati Inviati e Statistiche")
+                            Text(stringResource(R.string.settings_show_stats))
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Versione App: 1.0 (Vipassana Timer)",
+                            text = stringResource(R.string.settings_app_version),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1077,7 +1078,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                 },
                 confirmButton = {
                     TextButton(onClick = { showSettingsDialog = false }) {
-                        Text("Chiudi")
+                        Text(stringResource(R.string.button_close))
                     }
                 }
             )
@@ -1091,7 +1092,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
             AlertDialog(
                 onDismissRequest = { showStatsDialog = false },
-                title = @Composable { Text(text = "Statistiche e Storico 📊") },
+                title = @Composable { Text(text = stringResource(R.string.dialog_stats_title)) },
                 text = @Composable {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -1106,8 +1107,8 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                     modifier = Modifier.padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Text("Minuti", style = MaterialTheme.typography.labelMedium)
-                                    Text("$totalMinutes min", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                    Text(stringResource(R.string.stats_minutes), style = MaterialTheme.typography.labelMedium)
+                                    Text(stringResource(R.string.stats_min_format, totalMinutes), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
                                 }
                             }
 
@@ -1119,7 +1120,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                     modifier = Modifier.padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Text("Sessioni", style = MaterialTheme.typography.labelMedium)
+                                    Text(stringResource(R.string.stats_sessions), style = MaterialTheme.typography.labelMedium)
                                     Text("$totalSessions", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
                                 }
                             }
@@ -1132,8 +1133,8 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                     modifier = Modifier.padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Text("Striscia", style = MaterialTheme.typography.labelMedium)
-                                    Text("🔥 $streak g", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                    Text(stringResource(R.string.stats_streak), style = MaterialTheme.typography.labelMedium)
+                                    Text(stringResource(R.string.stats_streak_format, streak), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
                                 }
                             }
                         }
@@ -1141,14 +1142,14 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Text(
-                            text = "Cronologia Meditazioni:",
+                            text = stringResource(R.string.stats_history_title),
                             style = MaterialTheme.typography.titleSmall
                         )
                         Spacer(modifier = Modifier.height(8.dp))
 
                         if (sessionHistoryList.isEmpty()) {
                             Text(
-                                text = "Nessuna sessione registrata finora. Completa una meditazione!",
+                                text = stringResource(R.string.stats_history_empty),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 12.dp)
@@ -1172,7 +1173,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                         ) {
                                             Column {
                                                 Text(
-                                                    text = "🧘 ${session.durationMinutes} minuti",
+                                                    text = stringResource(R.string.stats_history_item, session.durationMinutes),
                                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
                                                 )
                                                 Text(
@@ -1195,7 +1196,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                 },
                 confirmButton = {
                     TextButton(onClick = { showStatsDialog = false }) {
-                        Text("Chiudi")
+                        Text(stringResource(R.string.button_close))
                     }
                 }
             )
@@ -1205,9 +1206,9 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
         sessionToDelete?.let { session ->
             AlertDialog(
                 onDismissRequest = { sessionToDelete = null },
-                title = { Text("Elimina Meditazione 🗑️") },
+                title = { Text(stringResource(R.string.dialog_delete_title)) },
                 text = {
-                    Text("Vuoi davvero eliminare la sessione di ${session.durationMinutes} min del ${session.dateFormatted} sia dall'app che da Google Connessione Salute?")
+                    Text(stringResource(R.string.dialog_delete_message, session.durationMinutes, session.dateFormatted))
                 },
                 confirmButton = {
                     Button(
@@ -1220,17 +1221,17 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
                                 deleteSessionFromLocalHistory(context, session.rawString)
                                 sessionHistoryList = getLocalSessionHistory(context)
                                 sessionToDelete = null
-                                Toast.makeText(context, "Sessione eliminata!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.toast_session_deleted), Toast.LENGTH_SHORT).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
-                        Text("Elimina")
+                        Text(stringResource(R.string.button_delete))
                     }
                 },
                 dismissButton = {
                     OutlinedButton(onClick = { sessionToDelete = null }) {
-                        Text("Annulla")
+                        Text(stringResource(R.string.button_cancel))
                     }
                 }
             )

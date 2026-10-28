@@ -1,4 +1,19 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Still Watch</string>
+    <string name="toast_sync_success">Synced with phone! 🧘‍♂️</string>
+    <string name="status_preparing">Prepare...</string>
+    <string name="status_extra">Extra ✨</string>
+    <string name="status_vipassana">Vipassana</string>
+    <string name="text_prepare">Prepare</string>
+    <string name="button_save_extra">Save +Extra (+%1$dm)</string>
+    <string name="button_reset">Reset</string>
+    <string name="button_only_planned">Only Planned</string>
+    <string name="button_pause">Pause</string>
+    <string name="button_start">Start</string>
+    <string name="settings_title">⚙️ Settings</string>
+    <string name="settings_duration">Meditation Duration:</string>
+    <string name="settings_gong_sound">Gong Sound:</string>
+    <string name="settings_prep_time">Preparation (Gong): %1$ds</string>
+    <string name="settings_app_version">App Version: 1.0 (Vipassana Timer)</string>
+    <string name="status_timer">Meditation Timer</string>
 </resources>
