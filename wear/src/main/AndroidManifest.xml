@@ -44,6 +44,9 @@
                 android:name="androidx.wear.tiles.PREVIEW"
                 android:resource="@drawable/still_icon" />
         </service>
+            <service android:name=".StillTimerService" android:foregroundServiceType="specialUse" android:exported="false" />
     </application>
 
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 </manifest>

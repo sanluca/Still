@@ -15,4 +15,5 @@
     <string name="settings_gong_sound">Gong Sound:</string>
     <string name="settings_prep_time">Preparation (Gong): %1$ds</string>
     <string name="settings_app_version">App Version: 1.0 (Vipassana Timer)</string>
+    <string name="status_timer">Meditation Timer</string>
 </resources>
