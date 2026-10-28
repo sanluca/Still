@@ -67,7 +67,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
-import androidx.health.connect.client.feature.ExperimentalMindfulnessSessionApi
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import com.sanluca.still.ui.theme.StillTheme
@@ -374,7 +373,6 @@ fun requestDndAccess(context: Context) {
     }
 }
 
-@OptIn(ExperimentalMindfulnessSessionApi::class)
 @Composable
 fun MeditationTimerScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -1071,7 +1069,7 @@ fun MeditationTimerScreen(modifier: Modifier = Modifier) {
 
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Versione App: 1.0.0 (Vipassana Timer)",
+                            text = "Versione App: 1.0 (Vipassana Timer)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

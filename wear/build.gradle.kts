@@ -57,6 +57,8 @@ dependencies {
     // Wear OS & Google Play Services Wearable Data Layer
     implementation("androidx.wear.compose:compose-material3:1.0.0-alpha28")
     implementation("androidx.wear.compose:compose-foundation:1.4.1")
+    implementation("androidx.wear:wear:1.3.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.1")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
 
     // Wear OS Tiles & Protolayout

@@ -1,9 +1,7 @@
 package com.sanluca.still.wear
-
+import androidx.fragment.app.FragmentActivity
+import androidx.wear.ambient.AmbientModeSupport
 import android.app.Activity
-import android.content.Intent
-import android.provider.Settings
-import android.app.NotificationManager
 import android.content.Context
 import android.media.AudioAttributes
 import android.os.Bundle
@@ -57,18 +55,34 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvider {
+
+    private lateinit var ambientController: AmbientModeSupport.AmbientController
+    private val isAmbientState = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ambientController = AmbientModeSupport.attach(this)
         setContent {
-            WearMeditationApp()
+            WearMeditationApp(isAmbient = isAmbientState.value)
+        }
+    }
+
+    override fun getAmbientCallback(): AmbientModeSupport.AmbientCallback = object : AmbientModeSupport.AmbientCallback() {
+        override fun onEnterAmbient(ambientDetails: Bundle?) {
+            super.onEnterAmbient(ambientDetails)
+            isAmbientState.value = true
+        }
+
+        override fun onExitAmbient() {
+            super.onExitAmbient()
+            isAmbientState.value = false
         }
     }
 }
 
 private const val PREFS_NAME = "still_wear_prefs"
 private const val KEY_PREP_TIME = "prep_time_seconds"
-private const val KEY_AUTO_DND = "auto_dnd_enabled"
 private const val KEY_GONG_FREQ = "gong_frequency_hz"
 private const val KEY_PENDING_SESSIONS = "pending_watch_sessions"
 
@@ -82,16 +96,6 @@ fun savePrepTime(context: Context, secs: Int) {
     prefs.edit().putInt(KEY_PREP_TIME, secs).apply()
 }
 
-fun getSavedAutoDnd(context: Context): Boolean {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    return prefs.getBoolean(KEY_AUTO_DND, true)
-}
-
-fun saveAutoDnd(context: Context, enabled: Boolean) {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    prefs.edit().putBoolean(KEY_AUTO_DND, enabled).apply()
-}
-
 fun getSavedGongFrequency(context: Context): Double {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getFloat(KEY_GONG_FREQ, 432.0f).toDouble()
@@ -100,35 +104,6 @@ fun getSavedGongFrequency(context: Context): Double {
 fun saveGongFrequency(context: Context, freqHz: Double) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putFloat(KEY_GONG_FREQ, freqHz.toFloat()).apply()
-}
-
-fun enableDoNotDisturbOnWatch(context: Context) {
-    try {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (!notificationManager.isNotificationPolicyAccessGranted) {
-            Log.d("StillDebug", "DND non autorizzato su WearOS. Apertura Impostazioni.")
-            Toast.makeText(context, "Autorizza Non Disturbare nelle impostazioni dell'orologio", Toast.LENGTH_LONG).show()
-            val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            return
-        }
-        notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-}
-
-fun disableDoNotDisturbOnWatch(context: Context) {
-    try {
-        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (!notificationManager.isNotificationPolicyAccessGranted) {
-            return
-        }
-        notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
 }
 
 fun savePendingSessionOnWatch(context: Context, raw: String) {
@@ -210,14 +185,13 @@ fun triggerHapticGong(context: Context) {
 }
 
 @Composable
-fun WearMeditationApp() {
+fun WearMeditationApp(isAmbient: Boolean = false) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
     var selectedTimeInSeconds by remember { mutableStateOf(300) } // Default 5 min
     
     var prepTimeSeconds by remember { mutableStateOf(getSavedPrepTime(context)) }
-    var autoDndEnabled by remember { mutableStateOf(getSavedAutoDnd(context)) }
     var gongFreqHz by remember { mutableStateOf(getSavedGongFrequency(context)) }
 
     var isPreparing by remember { mutableStateOf(false) }
@@ -245,12 +219,6 @@ fun WearMeditationApp() {
                         prepTimeSeconds = prepSec
                         savePrepTime(context, prepSec)
                     }
-                    if (parts.size >= 2) {
-                        val dndVal = parts[1].toIntOrNull() ?: 1
-                        val dndBool = dndVal == 1
-                        autoDndEnabled = dndBool
-                        saveAutoDnd(context, dndBool)
-                    }
                 }
             }
         } catch (e: Exception) {
@@ -271,16 +239,13 @@ fun WearMeditationApp() {
         }
     }
 
-    val backgroundColor = Color(0xFF12232E)
-    val overtimeColor = Color(0xFFE5A93C)
-    val prepColor = Color(0xFF80CBC4)
+    val backgroundColor = if (isAmbient && isTimerRunning) Color.Black else Color(0xFF12232E)
+    val overtimeColor = if (isAmbient && isTimerRunning) Color.White else Color(0xFFE5A93C)
+    val prepColor = if (isAmbient && isTimerRunning) Color.White else Color(0xFF80CBC4)
 
     LaunchedEffect(isTimerRunning) {
         val activity = context as? Activity
         if (isTimerRunning) {
-            if (autoDndEnabled) {
-                enableDoNotDisturbOnWatch(context)
-            }
             activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -342,18 +307,12 @@ fun WearMeditationApp() {
                     }
                 }
             } finally {
-                if (autoDndEnabled) {
-                    disableDoNotDisturbOnWatch(context)
-                }
                 activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 if (wakeLock.isHeld) {
                     wakeLock.release()
                 }
             }
         } else {
-            if (autoDndEnabled) {
-                disableDoNotDisturbOnWatch(context)
-            }
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             isPreparing = false
         }
@@ -670,7 +629,12 @@ fun WearMeditationApp() {
                 }
 
                 item {
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Text(
+                        text = "Versione App: 1.0 (Vipassana Timer)",
+                        fontSize = 9.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(bottom = 20.dp)
+                    )
                 }
             }
         }

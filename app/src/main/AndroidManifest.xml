@@ -15,6 +15,9 @@
     <!-- Permessi ufficiali Android 14+ (System Health Connect) -->
     <uses-permission android:name="android.permission.health.WRITE_MINDFULNESS" />
 
+    <!-- Permessi di compatibilità per Android 13 e precedenti / App Health Connect -->
+    <uses-permission android:name="androidx.health.permission.Mindfulness.WRITE" />
+
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
     </queries>
