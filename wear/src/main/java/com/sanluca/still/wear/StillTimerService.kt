@@ -82,6 +82,7 @@ class StillTimerService : Service() {
 
     private fun broadcastState(isPreparing: Boolean, prepLeft: Int, timeLeft: Int, isOvertime: Boolean, overtimeSec: Int, initialTime: Int) {
         val intent = Intent(ACTION_TIMER_TICK).apply {
+            setPackage(packageName)
             putExtra(EXTRA_IS_PREPARING, isPreparing)
             putExtra(EXTRA_PREP_LEFT, prepLeft)
             putExtra(EXTRA_TIME_LEFT, timeLeft)

@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -217,12 +219,17 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
         object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == StillTimerService.ACTION_TIMER_TICK) {
+                    val runningFromService = intent.getBooleanExtra(StillTimerService.EXTRA_IS_RUNNING, false)
+                    // Ignora messaggi broadcast fantasma arrivati dopo il reset/salvataggio locale
+                    if (!isTimerRunning && sessionStartTime == null) {
+                        return
+                    }
                     isPreparing = intent.getBooleanExtra(StillTimerService.EXTRA_IS_PREPARING, false)
                     prepTimeLeftSeconds = intent.getIntExtra(StillTimerService.EXTRA_PREP_LEFT, 0)
                     timeLeftInSeconds = intent.getIntExtra(StillTimerService.EXTRA_TIME_LEFT, 0)
                     isOvertime = intent.getBooleanExtra(StillTimerService.EXTRA_IS_OVERTIME_STATE, false)
                     overtimeSeconds = intent.getIntExtra(StillTimerService.EXTRA_OVERTIME_SECONDS_STATE, 0)
-                    isTimerRunning = intent.getBooleanExtra(StillTimerService.EXTRA_IS_RUNNING, false)
+                    isTimerRunning = runningFromService
                     val initialTimeState = intent.getIntExtra(StillTimerService.EXTRA_INITIAL_TIME_STATE, 300)
                     selectedTimeInSeconds = initialTimeState
 
@@ -334,6 +341,11 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
             Toast.makeText(context, context.getString(R.string.toast_sync_success), Toast.LENGTH_SHORT).show()
         }
 
+        val stopIntent = Intent(context, StillTimerService::class.java).apply {
+            action = StillTimerService.ACTION_STOP
+        }
+        context.startService(stopIntent)
+
         isTimerRunning = false
         isOvertime = false
         overtimeSeconds = 0
@@ -365,55 +377,86 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
                 )
             }
 
-            // CERCHIO GRANDE (155dp)
+            // CERCHIO GRANDE (135dp) CON TASTI [-] E [+] AI LATI
             item {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(155.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (isPreparing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.fillMaxSize(),
-                            color = prepColor,
-                            strokeWidth = 6.dp
-                        )
-                    } else if (isOvertime) {
-                        CircularProgressIndicator(
-                            progress = { 1f },
-                            modifier = Modifier.fillMaxSize(),
-                            color = overtimeColor,
-                            strokeWidth = 6.dp,
-                            strokeCap = StrokeCap.Round
-                        )
-                    } else if (selectedTimeInSeconds != -1) {
-                        CircularProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.fillMaxSize(),
-                            color = Color(0xFF4A707A),
-                            strokeWidth = 6.dp,
-                            strokeCap = StrokeCap.Round
-                        )
-                    } else {
-                        CircularProgressIndicator(
-                            progress = { 1f },
-                            modifier = Modifier.fillMaxSize(),
-                            color = Color(0xFF4A707A).copy(alpha = 0.5f),
-                            strokeWidth = 4.dp
-                        )
-                    }
-
-                    if (isPreparing) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(stringResource(R.string.text_prepare), fontSize = 11.sp, color = prepColor)
-                            Text("${prepTimeLeftSeconds}s", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = prepColor)
+                    if (!isTimerRunning && !isOvertime) {
+                        OutlinedButton(
+                            onClick = { if (selectedTimeInSeconds > 60) updateTimeSelection(selectedTimeInSeconds - 60) },
+                            enabled = selectedTimeInSeconds > 60,
+                            modifier = Modifier.size(34.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("-", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
                     } else {
-                        Text(
-                            text = if (isOvertime) "+${formatTime(overtimeSeconds)}" else if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) "∞" else formatTime(timeLeftInSeconds),
-                            fontSize = if (isOvertime) 26.sp else 32.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isOvertime) overtimeColor else Color.White
-                        )
+                        Spacer(modifier = Modifier.width(34.dp))
+                    }
+
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(135.dp)
+                    ) {
+                        if (isPreparing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.fillMaxSize(),
+                                color = prepColor,
+                                strokeWidth = 6.dp
+                            )
+                        } else if (isOvertime) {
+                            CircularProgressIndicator(
+                                progress = { 1f },
+                                modifier = Modifier.fillMaxSize(),
+                                color = overtimeColor,
+                                strokeWidth = 6.dp,
+                                strokeCap = StrokeCap.Round
+                            )
+                        } else if (selectedTimeInSeconds != -1) {
+                            CircularProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color(0xFF4A707A),
+                                strokeWidth = 6.dp,
+                                strokeCap = StrokeCap.Round
+                            )
+                        } else {
+                            CircularProgressIndicator(
+                                progress = { 1f },
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color(0xFF4A707A).copy(alpha = 0.5f),
+                                strokeWidth = 4.dp
+                            )
+                        }
+
+                        if (isPreparing) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(stringResource(R.string.text_prepare), fontSize = 11.sp, color = prepColor)
+                                Text("${prepTimeLeftSeconds}s", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = prepColor)
+                            }
+                        } else {
+                            Text(
+                                text = if (isOvertime) "+${formatTime(overtimeSeconds)}" else if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) "∞" else formatTime(timeLeftInSeconds),
+                                fontSize = if (isOvertime) 24.sp else 30.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isOvertime) overtimeColor else Color.White
+                            )
+                        }
+                    }
+
+                    if (!isTimerRunning && !isOvertime) {
+                        OutlinedButton(
+                            onClick = { updateTimeSelection(if (selectedTimeInSeconds == -1) 60 else selectedTimeInSeconds + 60) },
+                            modifier = Modifier.size(34.dp),
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.width(34.dp))
                     }
                 }
             }
@@ -498,45 +541,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
                     Spacer(modifier = Modifier.height(6.dp))
                 }
 
-                // 1. REGOLAZIONE DURATA MEDITAZIONE
-                item {
-                    Text(stringResource(R.string.settings_duration), fontSize = 10.sp, color = Color.Gray)
-                }
-
-                item {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 4.dp)
-                    ) {
-                        FilterChip(
-                            selected = selectedTimeInSeconds == 300,
-                            onClick = { updateTimeSelection(300) },
-                            label = { Text("5m", fontSize = 11.sp) }
-                        )
-
-                        OutlinedButton(
-                            onClick = { if (selectedTimeInSeconds > 60) updateTimeSelection(selectedTimeInSeconds - 60) },
-                            enabled = selectedTimeInSeconds > 60,
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Text("-1m", fontSize = 11.sp)
-                        }
-
-                        OutlinedButton(
-                            onClick = { updateTimeSelection(selectedTimeInSeconds + 60) },
-                            modifier = Modifier.height(34.dp)
-                        ) {
-                            Text("+1m", fontSize = 11.sp)
-                        }
-                    }
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
-
-                // 2. FREQUENZA CAMPANA TIBETANA SULL'OROLOGIO
+                // 1. FREQUENZA CAMPANA TIBETANA SULL'OROLOGIO
                 item {
                     Text(stringResource(R.string.settings_gong_sound), fontSize = 10.sp, color = Color.Gray)
                 }
