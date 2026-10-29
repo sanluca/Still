@@ -63,6 +63,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import android.content.ContextWrapper
+
+fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvider {
 
@@ -220,8 +227,8 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == StillTimerService.ACTION_TIMER_TICK) {
                     val runningFromService = intent.getBooleanExtra(StillTimerService.EXTRA_IS_RUNNING, false)
-                    // Ignora messaggi broadcast fantasma arrivati dopo il reset/salvataggio locale
-                    if (!isTimerRunning && sessionStartTime == null) {
+                    // Ignora messaggi broadcast fantasma solo se sappiamo che il timer è fermo lato servizio
+                    if (!runningFromService && !isTimerRunning && sessionStartTime == null) {
                         return
                     }
                     isPreparing = intent.getBooleanExtra(StillTimerService.EXTRA_IS_PREPARING, false)
@@ -291,7 +298,7 @@ fun WearMeditationApp(isAmbient: Boolean = false) {
     val prepColor = if (isAmbient && isTimerRunning) Color.White else Color(0xFF80CBC4)
 
     LaunchedEffect(isTimerRunning) {
-        val activity = context as? Activity
+        val activity = context.findActivity()
         if (isTimerRunning) {
             activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (sessionStartTime == null) {
