@@ -1,0 +1,36 @@
+# Gradle e directory di compilazione (radice, :app, :wear e qualsiasi sottomodulo)
+.gradle/
+build/
+**/build/
+
+# Binari, pacchetti compilati e bytecode
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+
+# Configurazioni locali e SDK path
+local.properties
+/local.properties
+
+# Android Studio / IntelliJ IDEA
+*.iml
+.idea/
+/.idea/
+/captures
+.externalNativeBuild
+.cxx
+
+# Chiavi crittografiche e certificati di firma (Play Store)
+*.jks
+*.keystore
+keystore.properties
+
+# File generati dai sistemi operativi
+.DS_Store
+Thumbs.db
+
+# Cartelle di esportazione pacchetti release
+release/
+**/release/
