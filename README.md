@@ -1,4 +1,4 @@
-# Still - Meditation Timer
+# Still - Minimal Zen Timer
 
 [🇮🇹 Versione Italiana](#-versione-italiana) | [🇬🇧 English Version](#-english-version)
 
