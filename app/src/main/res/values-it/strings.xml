@@ -39,7 +39,7 @@
     <string name="settings_health_reconnect">Riconnetti / Verifica Permessi</string>
     <string name="settings_health_connect">Connetti a Google Salute 🏥</string>
     <string name="settings_show_stats">📜 Mostra Dati Inviati e Statistiche</string>
-    <string name="settings_app_version">Still v1.0</string>
+    <string name="settings_app_version">Still v%1$s</string>
     <string name="button_close">Chiudi</string>
     <string name="dialog_stats_title">Statistiche e Storico 📊</string>
     <string name="stats_minutes">Minuti</string>

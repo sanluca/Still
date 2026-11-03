@@ -523,6 +523,10 @@ fun MeditationTimerScreen(
 
     fun updateTimeSelection(newTime: Int) {
         selectedTimeInSeconds = newTime
+        timeLeftInSeconds = if (newTime == -1) 0 else newTime
+        isOvertime = false
+        overtimeSeconds = 0
+        sessionStartTime = null
         saveSelectedTime(context, newTime)
     }
 
@@ -788,8 +792,10 @@ fun MeditationTimerScreen(
                         )
                         Text(
                             text = "+${formatTime(overtimeSeconds)}",
+                            maxLines = 1,
+                            softWrap = false,
                             style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = 50.sp,
+                                fontSize = if (overtimeSeconds >= 6000) 40.sp else 46.sp,
                                 fontWeight = FontWeight.Bold
                             ),
                             color = overtimeColor
@@ -802,8 +808,14 @@ fun MeditationTimerScreen(
                         } else {
                             formatTime(timeLeftInSeconds)
                         },
+                        maxLines = 1,
+                        softWrap = false,
                         style = MaterialTheme.typography.displayLarge.copy(
-                            fontSize = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) 80.sp else 54.sp,
+                            fontSize = when {
+                                selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> 80.sp
+                                timeLeftInSeconds >= 6000 -> 42.sp
+                                else -> 48.sp
+                            },
                             fontWeight = FontWeight.Normal
                         )
                     )
@@ -1394,7 +1406,7 @@ fun HealthPrivacyRationaleDialog(onDismiss: () -> Unit) {
                 }
                 HorizontalDivider()
                 Text(
-                    text = stringResource(R.string.settings_app_version),
+                    text = stringResource(R.string.settings_app_version, BuildConfig.VERSION_NAME),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.CenterHorizontally)

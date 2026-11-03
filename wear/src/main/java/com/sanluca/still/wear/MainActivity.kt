@@ -857,7 +857,7 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                 }
 
                 Text(
-                    text = stringResource(R.string.settings_app_version),
+                    text = stringResource(R.string.settings_app_version, BuildConfig.VERSION_NAME),
                     fontSize = 9.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

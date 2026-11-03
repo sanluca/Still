@@ -15,6 +15,6 @@
     <string name="settings_duration">Durata Meditazione:</string>
     <string name="settings_gong_sound">Suono Gong:</string>
     <string name="settings_prep_time">Preparazione (Gong): %1$ds</string>
-    <string name="settings_app_version">Still v1.0</string>
+    <string name="settings_app_version">Still v%1$s</string>
     <string name="status_timer">Timer di Meditazione</string>
 </resources>
