@@ -5,16 +5,17 @@
     <string name="status_extra">Extra ✨</string>
     <string name="status_still">Still</string>
     <string name="text_prepare">Prepare</string>
-    <string name="button_save_extra">Save +Extra (+%1$dm)</string>
-    <string name="button_reset">Reset</string>
-    <string name="button_only_planned">Only Planned</string>
+    <string name="button_save_extra">Save +%1$dm</string>
     <string name="button_pause">Pause</string>
     <string name="button_resume">Resume</string>
     <string name="button_start">Start</string>
     <string name="settings_title">⚙️ Settings</string>
-    <string name="settings_duration">Meditation Duration:</string>
     <string name="settings_gong_sound">Gong Sound:</string>
-    <string name="settings_prep_time">Preparation (Gong): %1$ds</string>
+    <string name="settings_gong_volume">Bell Volume:</string>
+    <string name="settings_alert_mode">Alert Mode:</string>
+    <string name="alert_mode_both">Both</string>
+    <string name="alert_mode_bell">Bell</string>
+    <string name="alert_mode_vibrate">Vibrate</string>
     <string name="settings_app_version">Still v%1$s</string>
     <string name="status_timer">Meditation Timer</string>
 </resources>

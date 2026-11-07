@@ -1,6 +1,5 @@
 package com.sanluca.still.wear
 
-import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -36,6 +35,8 @@ class StillTimerService : Service() {
         const val EXTRA_FREQ = "FREQ"
         const val EXTRA_TIME = "TIME"
         const val EXTRA_PREP = "PREP"
+        const val EXTRA_ALERT_MODE = "ALERT_MODE"
+        const val EXTRA_VOLUME = "VOLUME"
         const val EXTRA_IS_OVERTIME = "IS_OVERTIME_START"
         const val EXTRA_OVERTIME_SECONDS = "OVERTIME_SECONDS_START"
         const val EXTRA_INITIAL_TIME = "INITIAL_TIME"
@@ -63,6 +64,8 @@ class StillTimerService : Service() {
             val selectedTime = intent.getIntExtra(EXTRA_TIME, 300) // This is current time left when resuming
             val initialTime = intent.getIntExtra(EXTRA_INITIAL_TIME, selectedTime)
             val prepTime = intent.getIntExtra(EXTRA_PREP, 0)
+            val alertMode = intent.getIntExtra(EXTRA_ALERT_MODE, ALERT_MODE_BOTH)
+            val gongVolume = intent.getIntExtra(EXTRA_VOLUME, 100)
             val isOvertimeStart = intent.getBooleanExtra(EXTRA_IS_OVERTIME, false)
             val overtimeSecsStart = intent.getIntExtra(EXTRA_OVERTIME_SECONDS, 0)
 
@@ -77,7 +80,7 @@ class StillTimerService : Service() {
                 .build()
 
             startForeground(1, notification)
-            startTimer(freq, selectedTime, prepTime, isOvertimeStart, overtimeSecsStart, initialTime)
+            startTimer(freq, selectedTime, prepTime, isOvertimeStart, overtimeSecsStart, initialTime, alertMode, gongVolume)
         } else if (intent?.action == ACTION_STOP) {
             stopTimer()
             stopSelf()
@@ -99,10 +102,23 @@ class StillTimerService : Service() {
         sendBroadcast(intent)
     }
 
-    private fun startTimer(gongFreqHz: Double, startingTimeLeft: Int, prepTimeSeconds: Int, isOvertimeStart: Boolean, overtimeSecsStart: Int, initialSelectedTime: Int) {
+    private fun startTimer(
+        gongFreqHz: Double,
+        startingTimeLeft: Int,
+        prepTimeSeconds: Int,
+        isOvertimeStart: Boolean,
+        overtimeSecsStart: Int,
+        initialSelectedTime: Int,
+        alertMode: Int,
+        gongVolume: Int
+    ) {
         if (isTimerRunning) return
         isTimerRunning = true
         isServiceRunning = true
+
+        val hasAudioHardware = packageManager.hasSystemFeature( android.content.pm.PackageManager.FEATURE_AUDIO_OUTPUT)
+        val shouldPlaySound = (alertMode == ALERT_MODE_BOTH || alertMode == ALERT_MODE_SOUND) && hasAudioHardware
+        val shouldVibrate = (alertMode == ALERT_MODE_BOTH || alertMode == ALERT_MODE_VIBRATION) || !hasAudioHardware
 
         val wakeLockTimeoutMs = if (initialSelectedTime > 0 && !isOvertimeStart) {
             (startingTimeLeft + prepTimeSeconds.coerceAtLeast(0)) * 1000L + WAKELOCK_MARGIN_MS
@@ -125,11 +141,15 @@ class StillTimerService : Service() {
 
                 if (!isTimerRunning) return@launch
 
-                // 2. INIZIO EFFETTIVO MEDITAZIONE CON GONG AUDIO E VIBRAZIONE
+                // 2. INIZIO EFFETTIVO MEDITAZIONE CON GONG AUDIO E/O VIBRAZIONE
                 if (prepTimeSeconds >= 0) {
-                    triggerHapticGong(this@StillTimerService)
-                    serviceScope.launch(Dispatchers.Default) {
-                        playGongSound(gongFreqHz, repeatCount = 1)
+                    if (shouldVibrate) {
+                        triggerHapticGong(this@StillTimerService, repeatCount = 1)
+                    }
+                    if (shouldPlaySound) {
+                        serviceScope.launch(Dispatchers.Default) {
+                            playGongSound(gongFreqHz, repeatCount = 1, volumePercent = gongVolume)
+                        }
                     }
                 }
 
@@ -161,9 +181,13 @@ class StillTimerService : Service() {
                             isOvertime = true
                             overtimeSec = 0
 
-                            triggerHapticGong(this@StillTimerService)
-                            serviceScope.launch(Dispatchers.Default) {
-                                playGongSound(gongFreqHz, repeatCount = 3)
+                            if (shouldVibrate) {
+                                triggerHapticGong(this@StillTimerService, repeatCount = 3)
+                            }
+                            if (shouldPlaySound) {
+                                serviceScope.launch(Dispatchers.Default) {
+                                    playGongSound(gongFreqHz, repeatCount = 3, volumePercent = gongVolume)
+                                }
                             }
 
                             // Risveglia e riporta in primo piano la schermata con i pulsanti per salvare

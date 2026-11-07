@@ -7,20 +7,24 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
 val DarkWarmColorScheme = darkColorScheme(
-    primary = WarmPeachPrimary, // #E5A882
-    onPrimary = WarmPeachOnPrimary, // #24140A
-    secondary = WarmTitleStill, // #D1A184
-    onSecondary = WarmPeachOnPrimary, // #24140A
-    tertiary = WarmTitleStill, // #D1A184
-    onTertiary = WarmPeachOnPrimary, // #24140A
-    background = DarkWarmBackground, // #0C0806
-    onBackground = WarmIvoryText, // #ECE4DF
-    surface = DarkWarmSurface, // #221C17
-    onSurface = WarmIvoryText, // #ECE4DF
-    surfaceVariant = DarkWarmSurfaceVariant, // #2A221C
-    onSurfaceVariant = WarmSandSubtitles, // #B8ADA5
-    outline = DarkWarmOutline, // #3E3129
-    outlineVariant = DarkWarmOutline, // #3E3129
+    primary = WarmPeachPrimary, // #86C7A3 (Verde Salvia)
+    onPrimary = WarmPeachOnPrimary, // #082416 (Verde Foresta scuro)
+    primaryContainer = DarkWarmPrimaryContainer, // #2B4A3C
+    onPrimaryContainer = WarmIvoryText, // #E2ECE6
+    secondary = WarmTitleStill, // #6BAF8B (Verde Eucalipto)
+    onSecondary = WarmPeachOnPrimary, // #082416
+    secondaryContainer = DarkWarmSecondaryContainer, // #21382E (Verde Pino morbido)
+    onSecondaryContainer = WarmIvoryText, // #E2ECE6
+    tertiary = WarmTitleStill, // #6BAF8B
+    onTertiary = WarmPeachOnPrimary, // #082416
+    background = DarkWarmBackground, // #060D0A (Nero Bosco profondo)
+    onBackground = WarmIvoryText, // #E2ECE6
+    surface = DarkWarmSurface, // #111E18
+    onSurface = WarmIvoryText, // #E2ECE6
+    surfaceVariant = DarkWarmSurfaceVariant, // #16261F (Verde Muschio scuro)
+    onSurfaceVariant = WarmSandSubtitles, // #A3B8AD
+    outline = DarkWarmOutline, // #2F4D3F
+    outlineVariant = DarkWarmOutline, // #2F4D3F
 )
 
 @Composable
