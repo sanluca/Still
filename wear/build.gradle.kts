@@ -13,8 +13,8 @@ android {
         applicationId = "com.sanluca.still"
         minSdk = 28 // Pixel Watch e dispositivi Wear OS 2.0+
         targetSdk = 36
-        versionCode = 10003
-        versionName = "1.0.1"
+        versionCode = 10004
+        versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

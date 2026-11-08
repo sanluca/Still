@@ -5,26 +5,26 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
 val DarkWarmColorScheme = darkColorScheme(
-    primary = WarmPeachPrimary, // #E5A882
-    onPrimary = WarmPeachOnPrimary, // #24140A
-    primaryContainer = StatsMinutesBadge, // #5A3B24
-    onPrimaryContainer = WarmIvoryText, // #ECE4DF
-    secondary = WarmTitleStill, // #D1A184
-    onSecondary = WarmPeachOnPrimary, // #24140A
-    secondaryContainer = StatsSessionsBadge, // #3E291C
-    onSecondaryContainer = WarmIvoryText, // #ECE4DF
-    tertiary = WarmTitleStill, // #D1A184
-    onTertiary = WarmPeachOnPrimary, // #24140A
-    tertiaryContainer = StatsStreakBadge, // #FFF3B0
-    onTertiaryContainer = StatsStreakText, // #2C1E0A
-    background = DarkWarmBackground, // #0C0806
-    onBackground = WarmIvoryText, // #ECE4DF
-    surface = DarkWarmSurface, // #221C17
-    onSurface = WarmIvoryText, // #ECE4DF
-    surfaceVariant = DarkWarmSurfaceVariant, // #2A221C
-    onSurfaceVariant = WarmSandSubtitles, // #B8ADA5
-    outline = DarkWarmOutline, // #3E3129
-    outlineVariant = DarkWarmOutline, // #3E3129
+    primary = WarmPeachPrimary, // #E08E45
+    onPrimary = WarmPeachOnPrimary, // #261104
+    primaryContainer = StatsMinutesBadge, // #63371E
+    onPrimaryContainer = WarmIvoryText, // #F2E8DF
+    secondary = WarmTitleStill, // #D97F4B
+    onSecondary = WarmPeachOnPrimary, // #261104
+    secondaryContainer = StatsSessionsBadge, // #472515
+    onSecondaryContainer = WarmIvoryText, // #F2E8DF
+    tertiary = WarmTitleStill, // #D97F4B
+    onTertiary = WarmPeachOnPrimary, // #261104
+    tertiaryContainer = StatsStreakBadge, // #F5D487
+    onTertiaryContainer = StatsStreakText, // #2C1906
+    background = DarkWarmBackground, // #0D0806
+    onBackground = WarmIvoryText, // #F2E8DF
+    surface = DarkWarmSurface, // #1E1410
+    onSurface = WarmIvoryText, // #F2E8DF
+    surfaceVariant = DarkWarmSurfaceVariant, // #2A1B15
+    onSurfaceVariant = WarmSandSubtitles, // #C4AF9E
+    outline = DarkWarmOutline, // #4A3024
+    outlineVariant = DarkWarmOutline, // #4A3024
 )
 
 @Composable

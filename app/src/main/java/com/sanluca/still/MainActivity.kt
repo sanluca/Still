@@ -28,6 +28,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,6 +74,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -94,8 +97,6 @@ import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.google.android.gms.wearable.PutDataMapRequest
-import com.google.android.gms.wearable.Wearable
 import com.sanluca.still.ui.theme.AutumnGlassOutline
 import com.sanluca.still.ui.theme.AutumnSandDeep
 import com.sanluca.still.ui.theme.AutumnSandLight
@@ -165,6 +166,8 @@ private const val PREFS_NAME = "still_prefs"
 private const val KEY_SELECTED_TIME = "selected_time_seconds"
 private const val KEY_PREP_TIME = "prep_time_seconds"
 private const val KEY_GONG_FREQ = "gong_frequency_hz"
+private const val KEY_GONG_VOLUME = "gong_volume_percent"
+private const val KEY_ALERT_MODE = "alert_mode"
 private const val KEY_INTERVAL_MINS = "interval_gong_mins"
 private const val KEY_AUTO_DND = "auto_dnd_enabled"
 private const val KEY_TIMER_STYLE = "timer_visual_style" // 0 = Cerchio, 1 = Clessidra
@@ -208,6 +211,26 @@ fun getSavedGongFrequency(context: Context): Double {
     return prefs.getFloat(KEY_GONG_FREQ, 432.0f).toDouble()
 }
 
+fun saveGongVolume(context: Context, volumePercent: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_GONG_VOLUME, volumePercent.coerceIn(20, 100)).apply()
+}
+
+fun getSavedGongVolume(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_GONG_VOLUME, 100).coerceIn(20, 100)
+}
+
+fun saveAlertMode(context: Context, mode: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_ALERT_MODE, mode).apply()
+}
+
+fun getSavedAlertMode(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_ALERT_MODE, ALERT_MODE_BOTH)
+}
+
 fun saveIntervalMins(context: Context, mins: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_INTERVAL_MINS, mins).apply()
@@ -221,7 +244,6 @@ fun getSavedIntervalMins(context: Context): Int {
 fun saveAutoDnd(context: Context, enabled: Boolean) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putBoolean(KEY_AUTO_DND, enabled).apply()
-    syncSettingsToWatch(context, getSavedPrepTime(context), enabled)
 }
 
 fun getSavedAutoDnd(context: Context): Boolean {
@@ -239,34 +261,9 @@ fun getSavedTimerStyle(context: Context): Int {
     return prefs.getInt(KEY_TIMER_STYLE, 1)
 }
 
-fun syncSettingsToWatch(context: Context, prepSeconds: Int, autoDnd: Boolean = getSavedAutoDnd(context)) {
-    try {
-        val dndInt = if (autoDnd) 1 else 0
-        val messageClient = Wearable.getMessageClient(context)
-        val nodeClient = Wearable.getNodeClient(context)
-        nodeClient.connectedNodes.addOnSuccessListener { nodes ->
-            val payload = "$prepSeconds|$dndInt".toByteArray()
-            for (node in nodes) {
-                messageClient.sendMessage(node.id, "/update_settings", payload)
-            }
-        }
-
-        val dataClient = Wearable.getDataClient(context)
-        val putDataMapReq = PutDataMapRequest.create("/still_settings")
-        putDataMapReq.dataMap.putInt("prep_time_seconds", prepSeconds)
-        putDataMapReq.dataMap.putBoolean("auto_dnd_enabled", autoDnd)
-        putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
-        val putDataReq = putDataMapReq.asPutDataRequest().setUrgent()
-        dataClient.putDataItem(putDataReq)
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-}
-
 fun savePrepTime(context: Context, prepSeconds: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_PREP_TIME, prepSeconds).apply()
-    syncSettingsToWatch(context, prepSeconds)
 }
 
 fun getSavedPrepTime(context: Context): Int {
@@ -510,7 +507,6 @@ fun MeditationTimerScreen(
             saveHealthConnectedState(context, true)
             syncPendingSessionsToHealthConnect(context, healthConnectManager)
         }
-        syncSettingsToWatch(context, getSavedPrepTime(context))
     }
 
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -601,6 +597,8 @@ fun MeditationTimerScreen(
     
     var prepTimeSeconds by remember { mutableStateOf(getSavedPrepTime(context)) }
     var gongFreqHz by remember { mutableStateOf(getSavedGongFrequency(context)) }
+    var gongVolumePercent by remember { mutableStateOf(getSavedGongVolume(context)) }
+    var alertMode by remember { mutableStateOf(getSavedAlertMode(context)) }
     var intervalMins by remember { mutableStateOf(getSavedIntervalMins(context)) }
     var autoDndEnabled by remember { mutableStateOf(getSavedAutoDnd(context)) }
     var timerStyle by remember { mutableStateOf(getSavedTimerStyle(context)) }
@@ -608,12 +606,15 @@ fun MeditationTimerScreen(
     var isPreparing by remember { mutableStateOf(false) }
     var prepTimeLeftSeconds by remember { mutableStateOf(0) }
 
-    var timeLeftInSeconds by remember { mutableStateOf(selectedTimeInSeconds) }
+    var timeLeftInSeconds by remember {
+        mutableStateOf(if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds)
+    }
     
     var isOvertime by remember { mutableStateOf(false) }
     var overtimeSeconds by remember { mutableStateOf(0) }
 
     var isTimerRunning by remember { mutableStateOf(false) }
+    var hideTimerNumbers by remember { mutableStateOf(false) }
 
     var sessionStartTime by remember { mutableStateOf<Instant?>(null) }
 
@@ -666,6 +667,8 @@ fun MeditationTimerScreen(
                     val serviceIntent = Intent(context, StillTimerService::class.java).apply {
                         action = "START"
                         putExtra("FREQ", gongFreqHz)
+                        putExtra("VOLUME", gongVolumePercent)
+                        putExtra("ALERT_MODE", alertMode)
                         putExtra("INTERVAL", intervalMins)
                         putExtra("TIME", selectedTimeInSeconds)
                         putExtra("DND", autoDndEnabled)
@@ -673,10 +676,18 @@ fun MeditationTimerScreen(
                     context.startForegroundService(serviceIntent)
                 } else {
                     // Ripresa dopo pausa (alla pausa il service è stato fermato): riparte dal tempo rimanente
+                    val elapsedBeforePause = if (selectedTimeInSeconds == -1) {
+                        timeLeftInSeconds
+                    } else {
+                        (selectedTimeInSeconds - timeLeftInSeconds).coerceAtLeast(0)
+                    }
                     val resumeIntent = Intent(context, StillTimerService::class.java).apply {
                         action = "START"
                         putExtra("RESUME", true)
+                        putExtra("ELAPSED_OFFSET", elapsedBeforePause)
                         putExtra("FREQ", gongFreqHz)
+                        putExtra("VOLUME", gongVolumePercent)
+                        putExtra("ALERT_MODE", alertMode)
                         putExtra("INTERVAL", intervalMins)
                         putExtra("TIME", if (selectedTimeInSeconds == -1) -1 else timeLeftInSeconds)
                         putExtra("DND", autoDndEnabled)
@@ -735,10 +746,18 @@ fun MeditationTimerScreen(
     val isInitialState = !isTimerRunning && !isOvertime && sessionStartTime == null
 
     fun resetTimerState() {
+        cancelGongVibration(context)
+        if (StillTimerService.isRunning) {
+            val stopIntent = Intent(context, StillTimerService::class.java).apply {
+                action = "STOP"
+            }
+            context.startService(stopIntent)
+        }
         isTimerRunning = false
         isPreparing = false
         isOvertime = false
         overtimeSeconds = 0
+        hideTimerNumbers = false
         timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
         sessionStartTime = null
     }
@@ -876,7 +895,15 @@ fun MeditationTimerScreen(
                 if (timerStyle == 1) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            if (isTimerRunning || isOvertime) {
+                                hideTimerNumbers = !hideTimerNumbers
+                            }
+                        }
                     ) {
                         val sandFraction = when {
                             isPreparing -> 1f
@@ -907,6 +934,7 @@ fun MeditationTimerScreen(
                                 text = "+${formatTime(overtimeSeconds)}",
                                 maxLines = 1,
                                 softWrap = false,
+                                modifier = Modifier.alpha(if (hideTimerNumbers) 0f else 1f),
                                 style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
                                 color = overtimeColor
                             )
@@ -919,6 +947,7 @@ fun MeditationTimerScreen(
                                 },
                                 maxLines = 1,
                                 softWrap = false,
+                                modifier = Modifier.alpha(if (hideTimerNumbers && isTimerRunning) 0f else 1f),
                                 style = MaterialTheme.typography.displayMedium.copy(
                                     fontWeight = FontWeight.Normal,
                                     color = MaterialTheme.colorScheme.onBackground
@@ -929,7 +958,16 @@ fun MeditationTimerScreen(
                 } else {
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier = Modifier.size(280.dp)
+                        modifier = Modifier
+                            .size(280.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                if (isTimerRunning || isOvertime) {
+                                    hideTimerNumbers = !hideTimerNumbers
+                                }
+                            }
                     ) {
                         if (isOvertime) {
                             CircularProgressIndicator(
@@ -979,7 +1017,10 @@ fun MeditationTimerScreen(
                                 )
                             }
                         } else if (isOvertime) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.alpha(if (hideTimerNumbers) 0f else 1f)
+                            ) {
                                 Text(
                                     text = stringResource(R.string.text_extra),
                                     style = MaterialTheme.typography.titleSmall,
@@ -1005,6 +1046,7 @@ fun MeditationTimerScreen(
                                 },
                                 maxLines = 1,
                                 softWrap = false,
+                                modifier = Modifier.alpha(if (hideTimerNumbers && isTimerRunning) 0f else 1f),
                                 style = MaterialTheme.typography.displayLarge.copy(
                                     fontSize = when {
                                         selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> 80.sp
@@ -1193,14 +1235,15 @@ fun MeditationTimerScreen(
             var prepInputText by remember { mutableStateOf(prepTimeSeconds.toString()) }
             var intervalInputText by remember { mutableStateOf(intervalMins.toString()) }
             val dndGranted = remember { isDndPermissionGranted(context) }
+            val isSoundEnabled = alertMode != ALERT_MODE_VIBRATION
             var previewGongJob by remember { mutableStateOf<Job?>(null) }
 
-            fun playPreviewGong(freq: Double) {
+            fun playPreviewGong(freq: Double, vol: Int = gongVolumePercent) {
                 gongFreqHz = freq
                 saveGongFrequency(context, freq)
                 previewGongJob?.cancel()
                 previewGongJob = coroutineScope.launch(Dispatchers.Default) {
-                    playGongSound(context, freq, repeatCount = 1)
+                    playGongSound(context, freq, repeatCount = 1, volumePercent = vol)
                 }
             }
 
@@ -1315,18 +1358,85 @@ fun MeditationTimerScreen(
                                     FilterChip(
                                         selected = gongFreqHz == 432.0,
                                         onClick = { playPreviewGong(432.0) },
+                                        enabled = isSoundEnabled,
                                         label = { Text("432 Hz", fontSize = 12.sp) }
                                     )
                                     FilterChip(
                                         selected = gongFreqHz == 528.0,
                                         onClick = { playPreviewGong(528.0) },
+                                        enabled = isSoundEnabled,
                                         label = { Text("528 Hz", fontSize = 12.sp) }
                                     )
                                     FilterChip(
                                         selected = gongFreqHz == 216.0,
                                         onClick = { playPreviewGong(216.0) },
+                                        enabled = isSoundEnabled,
                                         label = { Text("216 Hz", fontSize = 12.sp) }
                                     )
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    text = stringResource(R.string.settings_gong_volume),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    listOf(20, 40, 60, 80, 100).forEach { vol ->
+                                        FilterChip(
+                                            selected = gongVolumePercent == vol,
+                                            onClick = {
+                                                gongVolumePercent = vol
+                                                saveGongVolume(context, vol)
+                                                playPreviewGong(gongFreqHz, vol)
+                                            },
+                                            enabled = isSoundEnabled,
+                                            label = { Text("$vol%", fontSize = 11.sp) }
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    text = stringResource(R.string.settings_alert_mode),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    listOf(
+                                        ALERT_MODE_BOTH to stringResource(R.string.alert_mode_both),
+                                        ALERT_MODE_SOUND to stringResource(R.string.alert_mode_bell),
+                                        ALERT_MODE_VIBRATION to stringResource(R.string.alert_mode_vibrate)
+                                    ).forEach { (modeVal, modeLabel) ->
+                                        FilterChip(
+                                            selected = alertMode == modeVal,
+                                            onClick = {
+                                                alertMode = modeVal
+                                                saveAlertMode(context, modeVal)
+                                                if (modeVal == ALERT_MODE_BOTH || modeVal == ALERT_MODE_VIBRATION) {
+                                                    triggerHapticGong(context, repeatCount = 1)
+                                                }
+                                                if (modeVal == ALERT_MODE_VIBRATION) {
+                                                    previewGongJob?.cancel()
+                                                }
+                                            },
+                                            label = { Text(modeLabel, fontSize = 12.sp) }
+                                        )
+                                    }
                                 }
 
                                 Spacer(modifier = Modifier.height(10.dp))

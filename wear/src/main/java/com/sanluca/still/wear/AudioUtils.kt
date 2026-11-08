@@ -1,17 +1,57 @@
 package com.sanluca.still.wear
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioTrack
 import kotlinx.coroutines.delay
 import kotlin.math.exp
 import kotlin.math.sin
 
+private val wearVolumeLock = Any()
+private var activeWearGongCount = 0
+private var savedWearStreamVolume = -1
+
+private fun acquireFixedWearStreamVolume(audioManager: AudioManager) {
+    synchronized(wearVolumeLock) {
+        if (activeWearGongCount == 0) {
+            try {
+                savedWearStreamVolume = audioManager.getStreamVolume(AudioManager.STREAM_ALARM)
+                val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+                if (savedWearStreamVolume != maxVol) {
+                    audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, 0)
+                }
+            } catch (_: Exception) {
+                savedWearStreamVolume = -1
+            }
+        }
+        activeWearGongCount++
+    }
+}
+
+private fun releaseFixedWearStreamVolume(audioManager: AudioManager) {
+    synchronized(wearVolumeLock) {
+        activeWearGongCount = (activeWearGongCount - 1).coerceAtLeast(0)
+        if (activeWearGongCount == 0 && savedWearStreamVolume >= 0) {
+            try {
+                audioManager.setStreamVolume(AudioManager.STREAM_ALARM, savedWearStreamVolume, 0)
+            } catch (_: Exception) {
+                // Ignora se il sistema impedisce il cambio volume
+            } finally {
+                savedWearStreamVolume = -1
+            }
+        }
+    }
+}
+
 /**
  * Utility audio per l'orologio (Wear OS / Pixel Watch): supporta le 3 frequenze (432 Hz, 528 Hz, 216 Hz)
- * e i 3 Gong di chiusura, forzando la riproduzione tramite USAGE_ALARM e CONTENT_TYPE_SONIFICATION dall'altoparlante.
+ * e i 3 Gong di chiusura, forzando la riproduzione tramite USAGE_ALARM e CONTENT_TYPE_SONIFICATION dall'altoparlante
+ * a volume assoluto costante (ripristinando il volume di sistema dell'orologio al termine).
  */
 suspend fun playGongSound(
+    context: Context,
     frequencyHz: Double = 432.0,
     repeatCount: Int = 1,
     volumePercent: Int = 100
@@ -38,6 +78,8 @@ suspend fun playGongSound(
     }
 
     var audioTrack: AudioTrack? = null
+    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    acquireFixedWearStreamVolume(audioManager)
     try {
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
@@ -74,7 +116,8 @@ suspend fun playGongSound(
     } finally {
         try {
             audioTrack?.stop()
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
         audioTrack?.release()
+        releaseFixedWearStreamVolume(audioManager)
     }
 }

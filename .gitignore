@@ -1,5 +1,6 @@
 # Gradle e directory di compilazione (radice, :app, :wear e qualsiasi sottomodulo)
 .gradle/
+.kotlin/
 build/
 **/build/
 

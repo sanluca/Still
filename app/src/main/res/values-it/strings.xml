@@ -26,6 +26,11 @@
     <string name="settings_prep_label">Secondi di attesa</string>
     <string name="settings_prep_placeholder">es. 10</string>
     <string name="settings_gong_sound">Suono Campana Tibetana / Gong (Tocco per anteprima):</string>
+    <string name="settings_gong_volume">Volume Campana:</string>
+    <string name="settings_alert_mode">Modalità Avviso:</string>
+    <string name="alert_mode_both">Entrambi</string>
+    <string name="alert_mode_bell">Campane</string>
+    <string name="alert_mode_vibrate">Vibrazione</string>
     <string name="settings_timer_style">Stile Visivo del Timer:</string>
     <string name="settings_timer_style_circle">Cerchio Classico</string>
     <string name="settings_timer_style_hourglass">Clessidra</string>

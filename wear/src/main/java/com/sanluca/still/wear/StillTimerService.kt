@@ -23,6 +23,7 @@ class StillTimerService : Service() {
     private var isTimerRunning = false
     private var wakeLock: PowerManager.WakeLock? = null
     private var timerJob: Job? = null
+    private var gongJob: Job? = null
 
     companion object {
         var isServiceRunning = false
@@ -147,8 +148,9 @@ class StillTimerService : Service() {
                         triggerHapticGong(this@StillTimerService, repeatCount = 1)
                     }
                     if (shouldPlaySound) {
-                        serviceScope.launch(Dispatchers.Default) {
-                            playGongSound(gongFreqHz, repeatCount = 1, volumePercent = gongVolume)
+                        gongJob?.cancel()
+                        gongJob = serviceScope.launch(Dispatchers.Default) {
+                            playGongSound(this@StillTimerService, gongFreqHz, repeatCount = 1, volumePercent = gongVolume)
                         }
                     }
                 }
@@ -185,8 +187,9 @@ class StillTimerService : Service() {
                                 triggerHapticGong(this@StillTimerService, repeatCount = 3)
                             }
                             if (shouldPlaySound) {
-                                serviceScope.launch(Dispatchers.Default) {
-                                    playGongSound(gongFreqHz, repeatCount = 3, volumePercent = gongVolume)
+                                gongJob?.cancel()
+                                gongJob = serviceScope.launch(Dispatchers.Default) {
+                                    playGongSound(this@StillTimerService, gongFreqHz, repeatCount = 3, volumePercent = gongVolume)
                                 }
                             }
 
@@ -218,6 +221,9 @@ class StillTimerService : Service() {
         isServiceRunning = false
         timerJob?.cancel()
         timerJob = null
+        gongJob?.cancel()
+        gongJob = null
+        cancelGongVibration(this)
         releaseWakeLock()
     }
 

@@ -23,6 +23,8 @@ class StillTimerService : Service() {
     private var isTimerRunning = false
     private var autoDndEnabled = false
     private var wakeLock: PowerManager.WakeLock? = null
+    private var timerJob: Job? = null
+    private var gongJob: Job? = null
 
     companion object {
         // true solo finché il timer del service è realmente attivo
@@ -44,7 +46,10 @@ class StillTimerService : Service() {
             val intervalMins = intent.getIntExtra("INTERVAL", 0)
             val selectedTime = intent.getIntExtra("TIME", 600)
             val isResume = intent.getBooleanExtra("RESUME", false) // ripresa dopo pausa: TIME è il tempo rimanente
+            val elapsedOffset = intent.getIntExtra("ELAPSED_OFFSET", 0)
             autoDndEnabled = intent.getBooleanExtra("DND", false)
+            val gongVolume = intent.getIntExtra("VOLUME", 100)
+            val alertMode = intent.getIntExtra("ALERT_MODE", ALERT_MODE_BOTH)
 
             val notificationIntent = Intent(this, MainActivity::class.java)
             val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE)
@@ -56,7 +61,7 @@ class StillTimerService : Service() {
                 .build()
 
             startForeground(1, notification)
-            startTimer(freq, intervalMins, selectedTime, isResume)
+            startTimer(freq, intervalMins, selectedTime, isResume, elapsedOffset, gongVolume, alertMode)
         } else if (intent?.action == "STOP") {
             stopTimer()
             stopSelf()
@@ -64,10 +69,21 @@ class StillTimerService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun startTimer(gongFreqHz: Double, intervalMins: Int, selectedTimeInSeconds: Int, isResume: Boolean = false) {
+    private fun startTimer(
+        gongFreqHz: Double,
+        intervalMins: Int,
+        selectedTimeInSeconds: Int,
+        isResume: Boolean = false,
+        elapsedOffset: Int = 0,
+        gongVolume: Int = 100,
+        alertMode: Int = ALERT_MODE_BOTH
+    ) {
         if (isTimerRunning) return
         isTimerRunning = true
         isRunning = true
+
+        val shouldPlaySound = alertMode == ALERT_MODE_BOTH || alertMode == ALERT_MODE_SOUND
+        val shouldVibrate = alertMode == ALERT_MODE_BOTH || alertMode == ALERT_MODE_VIBRATION
 
         if (autoDndEnabled) {
             enableDoNotDisturb(this)
@@ -81,12 +97,18 @@ class StillTimerService : Service() {
         }
         acquireWakeLock(wakeLockTimeoutMs)
 
-        serviceScope.launch {
+        timerJob = serviceScope.launch {
             try {
                 // Alla ripresa dopo una pausa non si ripete il gong d'inizio
                 if (!isResume) {
-                    serviceScope.launch(Dispatchers.Default) {
-                        playGongSound(this@StillTimerService, gongFreqHz, repeatCount = 1)
+                    if (shouldVibrate) {
+                        triggerHapticGong(this@StillTimerService, repeatCount = 1)
+                    }
+                    if (shouldPlaySound) {
+                        gongJob?.cancel()
+                        gongJob = serviceScope.launch(Dispatchers.Default) {
+                            playGongSound(this@StillTimerService, gongFreqHz, repeatCount = 1, volumePercent = gongVolume)
+                        }
                     }
                 }
 
@@ -98,6 +120,7 @@ class StillTimerService : Service() {
                 while (isTimerRunning) {
                     delay(500L)
                     val elapsedSeconds = ((SystemClock.elapsedRealtime() - startRealtime) / 1000L).toInt()
+                    val totalElapsedSeconds = elapsedOffset + elapsedSeconds
 
                     // Sessione senza limite o in overtime: rinnovo a finestre di 15 min (mai un lock "infinito")
                     if ((selectedTimeInSeconds == -1 || isOvertime) &&
@@ -106,19 +129,31 @@ class StillTimerService : Service() {
                         acquireWakeLock(WAKELOCK_MARGIN_MS)
                     }
 
-                    if (intervalMins > 0 && elapsedSeconds > 0 && elapsedSeconds % (intervalMins * 60) == 0 && lastIntervalGongSec != elapsedSeconds) {
-                        lastIntervalGongSec = elapsedSeconds
-                        serviceScope.launch(Dispatchers.Default) {
-                            playGongSound(this@StillTimerService, gongFreqHz, repeatCount = 1)
+                    val isReachingEndNow = selectedTimeInSeconds != -1 && !isOvertime && (selectedTimeInSeconds - elapsedSeconds) <= 0
+
+                    if (!isOvertime && !isReachingEndNow && intervalMins > 0 && totalElapsedSeconds > 0 &&
+                        totalElapsedSeconds % (intervalMins * 60) == 0 && lastIntervalGongSec != totalElapsedSeconds) {
+                        lastIntervalGongSec = totalElapsedSeconds
+                        if (shouldVibrate) {
+                            triggerHapticGong(this@StillTimerService, repeatCount = 1)
+                        }
+                        if (shouldPlaySound) {
+                            gongJob?.cancel()
+                            gongJob = serviceScope.launch(Dispatchers.Default) {
+                                playGongSound(this@StillTimerService, gongFreqHz, repeatCount = 1, volumePercent = gongVolume)
+                            }
                         }
                     }
 
-                    if (selectedTimeInSeconds != -1 && !isOvertime) {
-                        val remaining = selectedTimeInSeconds - elapsedSeconds
-                        if (remaining <= 0) {
-                            isOvertime = true
-                            serviceScope.launch(Dispatchers.Default) {
-                                playGongSound(this@StillTimerService, gongFreqHz, repeatCount = 3)
+                    if (isReachingEndNow) {
+                        isOvertime = true
+                        if (shouldVibrate) {
+                            triggerHapticGong(this@StillTimerService, repeatCount = 3)
+                        }
+                        if (shouldPlaySound) {
+                            gongJob?.cancel()
+                            gongJob = serviceScope.launch(Dispatchers.Default) {
+                                playGongSound(this@StillTimerService, gongFreqHz, repeatCount = 3, volumePercent = gongVolume)
                             }
                         }
                     }
@@ -132,6 +167,11 @@ class StillTimerService : Service() {
     private fun stopTimer() {
         isTimerRunning = false
         isRunning = false
+        timerJob?.cancel()
+        timerJob = null
+        gongJob?.cancel()
+        gongJob = null
+        cancelGongVibration(this)
         if (autoDndEnabled) {
             disableDoNotDisturb(this)
         }

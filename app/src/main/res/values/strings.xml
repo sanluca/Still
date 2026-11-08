@@ -26,6 +26,11 @@
     <string name="settings_prep_label">Seconds to wait</string>
     <string name="settings_prep_placeholder">e.g. 10</string>
     <string name="settings_gong_sound">Tibetan Bowl / Gong Sound (Tap to preview):</string>
+    <string name="settings_gong_volume">Bell Volume:</string>
+    <string name="settings_alert_mode">Alert Mode:</string>
+    <string name="alert_mode_both">Both</string>
+    <string name="alert_mode_bell">Bell</string>
+    <string name="alert_mode_vibrate">Vibrate</string>
     <string name="settings_timer_style">Timer Visual Style:</string>
     <string name="settings_timer_style_circle">Classic Circle</string>
     <string name="settings_timer_style_hourglass">Hourglass</string>

@@ -72,7 +72,6 @@ import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
-import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import android.content.BroadcastReceiver
@@ -271,19 +270,41 @@ fun triggerHapticGong(context: Context, repeatCount: Int = 1) {
         }
 
         if (vibrator != null && vibrator.hasVibrator()) {
-            val audioAttributes = AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .build()
-
             val timings = if (repeatCount >= 3) {
                 longArrayOf(0, 500, 200, 800, 600, 500, 200, 800, 600, 500, 200, 800)
             } else {
                 longArrayOf(0, 500, 200, 800)
             }
             val effect = VibrationEffect.createWaveform(timings, -1)
-            vibrator.vibrate(effect, audioAttributes)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val vibrationAttributes = android.os.VibrationAttributes.createForUsage(
+                    android.os.VibrationAttributes.USAGE_ALARM
+                )
+                vibrator.vibrate(effect, vibrationAttributes)
+            } else {
+                val audioAttributes = AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .build()
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(effect, audioAttributes)
+            }
         }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
+fun cancelGongVibration(context: Context) {
+    try {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
+            vibratorManager?.defaultVibrator ?: (context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+        vibrator?.cancel()
     } catch (e: Exception) {
         e.printStackTrace()
     }
@@ -378,25 +399,6 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
         }
     }
 
-    DisposableEffect(context) {
-        val messageClient = Wearable.getMessageClient(context)
-        val listener = MessageClient.OnMessageReceivedListener { messageEvent ->
-            if (messageEvent.path == "/update_settings") {
-                val raw = String(messageEvent.data)
-                val parts = raw.split("|")
-                if (parts.isNotEmpty()) {
-                    val prepSec = parts[0].toIntOrNull() ?: 0
-                    prepTimeSeconds = prepSec
-                    savePrepTime(context, prepSec)
-                }
-            }
-        }
-        messageClient.addListener(listener)
-        onDispose {
-            messageClient.removeListener(listener)
-        }
-    }
-
     fun updateTimeSelection(newTime: Int) {
         selectedTimeInSeconds = newTime
         timeLeftInSeconds = if (newTime == -1) 0 else newTime
@@ -465,6 +467,7 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
     }
 
     fun resetTimerState() {
+        cancelGongVibration(context)
         val stopIntent = Intent(context, StillTimerService::class.java).apply {
             action = StillTimerService.ACTION_STOP
         }
@@ -880,7 +883,7 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                 fun playPreviewGong(freq: Double, vol: Int) {
                     previewGongJob?.cancel()
                     previewGongJob = coroutineScope.launch(Dispatchers.Default) {
-                        playGongSound(freq, repeatCount = 1, volumePercent = vol)
+                        playGongSound(context, freq, repeatCount = 1, volumePercent = vol)
                     }
                 }
 
