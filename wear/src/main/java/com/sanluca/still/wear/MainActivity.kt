@@ -498,7 +498,7 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
         resetTimerState()
     }
 
-    val isInitialState = !isTimerRunning && !isOvertime && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
+    val isInitialState = !isTimerRunning && !isOvertime && sessionStartTime == null && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
 
     // La pagina Impostazioni esiste solo quando il timer è fermo
     val showSettingsPage = !isTimerRunning && !isOvertime

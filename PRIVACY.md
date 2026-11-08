@@ -11,7 +11,7 @@ Questa informativa sulla privacy descrive come l'applicazione **Still** (sia per
 ### 1. Filosofia e Trasparenza
 **Still** è un'applicazione open source per la meditazione progettata nel pieno rispetto della privacy dell'utente:
 - **Nessun account esterno richiesto**: non è richiesta alcuna registrazione o creazione di profilo.
-- **Nessun server proprietario o cloud**: Still non possiede server e non trasmette alcun dato su server remoti o di terze parti.
+- **Nessun server proprietario**: Still non possiede server proprietari e non trasmette alcun dato a server di terze parti o servizi analytics.
 - **Nessuna pubblicità o tracker**: l'app non contiene annunci pubblicitari, librerie di profilazione o strumenti di tracciamento o analytics di terze parti.
 
 ### 2. Dati di Google Connessione Salute (Health Connect)
@@ -25,6 +25,7 @@ Still si integra con Google Connessione Salute per permettere agli utenti di reg
 ### 3. Dati Memorizzati sul Dispositivo
 - **Preferenze e Impostazioni**: preferenze dell'app (es. durata del timer, intervallo campane, frequenza del gong, attivazione automatica Non Disturbare) vengono salvate localmente nella memoria protetta del dispositivo tramite `SharedPreferences`.
 - **Storico Locale**: l'elenco delle sessioni completate viene conservato esclusivamente in locale sul dispositivo. L'utente può eliminare in qualsiasi momento le singole sessioni dallo storico interno dell'app.
+- **Backup di Sistema Android**: se l'utente ha abilitato il backup del dispositivo nelle impostazioni di Android, le impostazioni e lo storico locale possono essere inclusi nel servizio di backup cifrato di Google (Google Drive o trasferimento diretto verso un nuovo dispositivo).
 
 ### 4. Comunicazione tra Smartphone e Smartwatch (Wear OS)
 La comunicazione tra l'app per smartwatch (Wear OS) e l'app per smartphone avviene esclusivamente in modo locale e sicuro tramite i servizi ufficiali di Google (`Google Play Services Wearable Data Layer`), via Bluetooth o rete locale sicura. I dati scambiati riguardano solo la sincronizzazione delle impostazioni del timer e il trasferimento delle sessioni completate dall'orologio allo smartphone per l'archiviazione locale e l'invio a Health Connect.
@@ -32,7 +33,7 @@ La comunicazione tra l'app per smartwatch (Wear OS) e l'app per smartphone avvie
 ### 5. Controllo dell'Utente e Cancellazione dei Dati
 - L'utente ha il pieno controllo sui permessi di Health Connect, che possono essere revocati in qualsiasi momento tramite le *Impostazioni di Sistema Android > Sicurezza e Privacy > Connessione Salute*.
 - Le sessioni registrate su Health Connect possono essere visualizzate o eliminate direttamente dall'app di sistema Health Connect / Google Salute.
-- La disinstallazione dell'applicazione Still comporta la cancellazione automatica di tutti i dati memorizzati localmente dall'app.
+- La disinstallazione dell'applicazione Still comporta la cancellazione automatica di tutti i dati memorizzati localmente sul dispositivo (a meno che non vengano successivamente ripristinati tramite il backup di sistema Google Android collegato al proprio account).
 
 ### 6. Contatti
 Per domande relative alla privacy o al codice sorgente dell'applicazione, è possibile aprire una segnalazione (issue) direttamente sul repository GitHub del progetto:
@@ -47,7 +48,7 @@ This Privacy Policy describes how the **Still** application (for Android smartph
 ### 1. Core Principles
 **Still** is an open-source meditation timer built with privacy as a foundational principle:
 - **No Account Required**: No account creation, login, or personal profile is needed.
-- **No Cloud Servers**: Still does not operate remote servers and never transmits user data over the internet to any external backend.
+- **No Proprietary Servers**: Still does not operate remote servers and never transmits user data to any external backend or third-party analytics service.
 - **Zero Ads & Trackers**: The application contains no advertisements, analytics SDKs, tracking libraries, or profiling services.
 
 ### 2. Google Health Connect Data
@@ -61,6 +62,7 @@ Still integrates with Google Health Connect solely to allow users to sync their 
 ### 3. Local Data Storage
 - **Settings & Preferences**: User configurations (such as timer durations, gong sound frequencies, interval chime settings, and Do Not Disturb preferences) are stored locally on the device using Android's private `SharedPreferences`.
 - **Session History**: Meditation logs are saved solely on the local device. Users can manually delete any session record from the history screen at any time.
+- **Android System Backup**: If the user has enabled device backup in Android settings, app preferences and local session history may be included in Google's encrypted system backup service (Google Drive or direct device-to-device transfer).
 
 ### 4. Watch and Phone Communication (Wear OS)
 Communication between the Wear OS watch and paired Android phone takes place locally and securely via official Google Play Services (`Wearable Data Layer`) over Bluetooth or local Wi-Fi. This channel is strictly limited to syncing timer preferences and transferring finished watch sessions to the phone for local logging and Health Connect export.
@@ -68,7 +70,7 @@ Communication between the Wear OS watch and paired Android phone takes place loc
 ### 5. User Rights and Data Deletion
 - Users can revoke Health Connect permissions at any time via Android *Settings > Security & Privacy > Health Connect*.
 - Sessions saved to Health Connect can be viewed or deleted at any time through the Android Health Connect system interface.
-- Uninstalling the application deletes all locally stored preferences and history from the device.
+- Uninstalling the application deletes all locally stored preferences and history from the device (unless subsequently restored via Android's Google system backup linked to the user's account).
 
 ### 6. Contact
 For any inquiries regarding this policy or the application source code, please open an issue on the project GitHub repository:

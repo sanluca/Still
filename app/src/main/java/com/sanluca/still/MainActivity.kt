@@ -18,8 +18,16 @@ import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,6 +63,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,8 +72,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -74,14 +91,23 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
+import com.sanluca.still.ui.theme.AutumnGlassOutline
+import com.sanluca.still.ui.theme.AutumnSandDeep
+import com.sanluca.still.ui.theme.AutumnSandLight
+import com.sanluca.still.ui.theme.AutumnWoodFrame
 import com.sanluca.still.ui.theme.OvertimeGold
 import com.sanluca.still.ui.theme.StillTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.util.Calendar
@@ -141,6 +167,7 @@ private const val KEY_PREP_TIME = "prep_time_seconds"
 private const val KEY_GONG_FREQ = "gong_frequency_hz"
 private const val KEY_INTERVAL_MINS = "interval_gong_mins"
 private const val KEY_AUTO_DND = "auto_dnd_enabled"
+private const val KEY_TIMER_STYLE = "timer_visual_style" // 0 = Cerchio, 1 = Clessidra
 private const val KEY_HEALTH_CONNECTED = "health_connected"
 private const val KEY_SESSION_HISTORY = "session_history_list"
 private const val KEY_PENDING_HEALTH_SESSIONS = "pending_health_sessions"
@@ -200,6 +227,16 @@ fun saveAutoDnd(context: Context, enabled: Boolean) {
 fun getSavedAutoDnd(context: Context): Boolean {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getBoolean(KEY_AUTO_DND, true)
+}
+
+fun saveTimerStyle(context: Context, style: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_TIMER_STYLE, style).apply()
+}
+
+fun getSavedTimerStyle(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_TIMER_STYLE, 1)
 }
 
 fun syncSettingsToWatch(context: Context, prepSeconds: Int, autoDnd: Boolean = getSavedAutoDnd(context)) {
@@ -278,21 +315,41 @@ fun clearPendingWatchSessions(context: Context, rawList: List<String>) {
     prefs.edit().putStringSet(KEY_PENDING_HEALTH_SESSIONS, updatedSet).apply()
 }
 
+private val pendingSyncMutex = Mutex()
+
 suspend fun syncPendingSessionsToHealthConnect(context: Context, healthConnectManager: HealthConnectManager) {
-    val pending = getPendingWatchSessions(context)
-    if (pending.isNotEmpty() && healthConnectManager.hasAllPermissions()) {
-        val syncedRaws = mutableListOf<String>()
-        for (session in pending) {
-            val start = Instant.ofEpochSecond(session.startEpochSec)
-            val end = Instant.ofEpochSecond(session.endEpochSec)
-            val saved = healthConnectManager.saveMeditationSession(start, end)
-            if (saved) {
-                syncedRaws.add(session.rawString)
+    pendingSyncMutex.withLock {
+        // La coda va letta DENTRO il lock: una seconda chiamata la trova già svuotata
+        val pending = getPendingWatchSessions(context)
+        if (pending.isNotEmpty() && healthConnectManager.hasAllPermissions()) {
+            val syncedRaws = mutableListOf<String>()
+            for (session in pending) {
+                val start = Instant.ofEpochSecond(session.startEpochSec)
+                val end = Instant.ofEpochSecond(session.endEpochSec)
+                val saved = healthConnectManager.saveMeditationSession(start, end)
+                if (saved) {
+                    syncedRaws.add(session.rawString)
+                }
+            }
+            if (syncedRaws.isNotEmpty()) {
+                clearPendingWatchSessions(context, syncedRaws)
             }
         }
-        if (syncedRaws.isNotEmpty()) {
-            clearPendingWatchSessions(context, syncedRaws)
+    }
+}
+
+suspend fun resyncHistoryToHealthConnect(context: Context, healthConnectManager: HealthConnectManager): Boolean {
+    return pendingSyncMutex.withLock {
+        if (!healthConnectManager.hasAllPermissions()) return@withLock false
+        for (session in getLocalSessionHistory(context)) {
+            if (session.endEpochSec <= session.startEpochSec) continue
+            val start = Instant.ofEpochSecond(session.startEpochSec)
+            val end = Instant.ofEpochSecond(session.endEpochSec)
+            // Cancella+reinserisce: evita duplicati anche per i record vecchi senza clientRecordId
+            healthConnectManager.deleteMeditationSession(start, end)
+            healthConnectManager.saveMeditationSession(start, end)
         }
+        true
     }
 }
 
@@ -382,10 +439,16 @@ fun isDndPermissionGranted(context: Context): Boolean {
     return notificationManager.isNotificationPolicyAccessGranted
 }
 
+private const val KEY_PREV_INTERRUPTION_FILTER = "prev_interruption_filter"
+
 fun enableDoNotDisturb(context: Context) {
     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (notificationManager.isNotificationPolicyAccessGranted) {
         try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            if (!prefs.contains(KEY_PREV_INTERRUPTION_FILTER)) {
+                prefs.edit().putInt(KEY_PREV_INTERRUPTION_FILTER, notificationManager.currentInterruptionFilter).apply()
+            }
             notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -397,7 +460,15 @@ fun disableDoNotDisturb(context: Context) {
     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (notificationManager.isNotificationPolicyAccessGranted) {
         try {
-            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            // Ripristina solo se l'abbiamo attivato noi: la seconda chiamata (onDestroy) non deve toccare nulla
+            if (prefs.contains(KEY_PREV_INTERRUPTION_FILTER)) {
+                val previous = prefs.getInt(KEY_PREV_INTERRUPTION_FILTER, NotificationManager.INTERRUPTION_FILTER_ALL)
+                    .takeIf { it != NotificationManager.INTERRUPTION_FILTER_UNKNOWN }
+                    ?: NotificationManager.INTERRUPTION_FILTER_ALL
+                notificationManager.setInterruptionFilter(previous)
+                prefs.edit().remove(KEY_PREV_INTERRUPTION_FILTER).apply()
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -443,10 +514,34 @@ fun MeditationTimerScreen(
     }
 
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var isResyncing by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
     var sessionToDelete by remember { mutableStateOf<SessionLogEntry?>(null) }
     
     var sessionHistoryList by remember { mutableStateOf(getLocalSessionHistory(context)) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                sessionHistoryList = getLocalSessionHistory(context)
+                coroutineScope.launch {
+                    if (healthConnectManager.hasAllPermissions()) {
+                        isHealthConnected = true
+                        saveHealthConnectedState(context, true)
+                        syncPendingSessionsToHealthConnect(context, healthConnectManager)
+                    } else {
+                        isHealthConnected = false
+                        saveHealthConnectedState(context, false)
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -508,6 +603,7 @@ fun MeditationTimerScreen(
     var gongFreqHz by remember { mutableStateOf(getSavedGongFrequency(context)) }
     var intervalMins by remember { mutableStateOf(getSavedIntervalMins(context)) }
     var autoDndEnabled by remember { mutableStateOf(getSavedAutoDnd(context)) }
+    var timerStyle by remember { mutableStateOf(getSavedTimerStyle(context)) }
 
     var isPreparing by remember { mutableStateOf(false) }
     var prepTimeLeftSeconds by remember { mutableStateOf(0) }
@@ -618,10 +714,12 @@ fun MeditationTimerScreen(
             }
         } else {
             isPreparing = false
-            val stopIntent = Intent(context, StillTimerService::class.java).apply {
-                action = "STOP"
+            if (StillTimerService.isRunning) {
+                val stopIntent = Intent(context, StillTimerService::class.java).apply {
+                    action = "STOP"
+                }
+                context.startService(stopIntent)
             }
-            context.startService(stopIntent)
         }
     }
 
@@ -634,7 +732,19 @@ fun MeditationTimerScreen(
         }
     }
 
-    val isInitialState = !isTimerRunning && !isOvertime && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
+    val isInitialState = !isTimerRunning && !isOvertime && sessionStartTime == null
+
+    fun resetTimerState() {
+        isTimerRunning = false
+        isPreparing = false
+        isOvertime = false
+        overtimeSeconds = 0
+        timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
+        sessionStartTime = null
+    }
+
+    val toastResyncDone = stringResource(R.string.toast_health_resync_done)
+    val toastHealthDenied = stringResource(R.string.toast_health_permission_denied)
 
     fun saveAndFinishSession(includeExtra: Boolean) {
         val plannedSec = if (selectedTimeInSeconds > 0) {
@@ -651,7 +761,8 @@ fun MeditationTimerScreen(
                 var savedOnHealth = false
                 if (healthConnectManager.hasAllPermissions()) {
                     savedOnHealth = healthConnectManager.saveMeditationSession(start, end)
-                } else {
+                }
+                if (!savedOnHealth && isHealthConnectedStateSaved(context)) {
                     savePendingWatchSession(context, totalSec, start, end)
                 }
                 addSessionToLocalHistory(context, totalSec, start, end)
@@ -664,11 +775,7 @@ fun MeditationTimerScreen(
             }
         }
 
-        isTimerRunning = false
-        isOvertime = false
-        overtimeSeconds = 0
-        timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
-        sessionStartTime = null
+        resetTimerState()
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -679,313 +786,401 @@ fun MeditationTimerScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // --- BARRA SUPERIORE ---
-            Row(
+            // --- BARRA SUPERIORE CON TITOLO E CAPSULA AZIONI AUTUNNALE ---
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(top = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { showSettingsDialog = true }) {
-                        Text("⚙️", fontSize = 20.sp)
-                    }
-                    IconButton(onClick = { 
-                        sessionHistoryList = getLocalSessionHistory(context)
-                        coroutineScope.launch {
-                            syncPendingSessionsToHealthConnect(context, healthConnectManager)
-                        }
-                        showStatsDialog = true 
-                    }) {
-                        Text("📊", fontSize = 20.sp)
-                    }
-                }
+                Text(
+                    text = stringResource(R.string.still_title),
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Light),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = if (isPreparing) stringResource(R.string.status_preparing)
+                           else if (isOvertime) stringResource(R.string.status_overtime)
+                           else if (selectedTimeInSeconds == -1) stringResource(R.string.status_no_limit)
+                           else stringResource(R.string.status_timer),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isPreparing) MaterialTheme.colorScheme.tertiary
+                            else if (isOvertime) overtimeColor
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = stringResource(R.string.still_title),
-                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Light),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = if (isPreparing) stringResource(R.string.status_preparing)
-                               else if (isOvertime) stringResource(R.string.status_overtime)
-                               else if (selectedTimeInSeconds == -1) stringResource(R.string.status_no_limit)
-                               else stringResource(R.string.status_timer),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isPreparing) MaterialTheme.colorScheme.tertiary 
-                                else if (isOvertime) overtimeColor 
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Box simmetrico ai due pulsanti a sinistra (48dp x 2 = 96dp) con il pulsante Info/About a destra
-                Box(
-                    modifier = Modifier.width(96.dp),
-                    contentAlignment = Alignment.CenterEnd
+                // Capsula unificata per i 3 pulsanti (Impostazioni, Statistiche, Info)
+                Row(
+                    modifier = Modifier
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline,
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { showPrivacyDialog = true }) {
-                        Text("ℹ️", fontSize = 20.sp)
+                    IconButton(
+                        onClick = { showSettingsDialog = true },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Text("⚙", fontSize = 19.sp, color = MaterialTheme.colorScheme.primary)
                     }
-                }
-            }
-
-            // --- CERCHIO CON TIMER AL CENTRO E DOPPIO CERCHIO EXTRA ---
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(280.dp)
-            ) {
-                if (isOvertime) {
-                    CircularProgressIndicator(
-                        progress = { 1f },
-                        modifier = Modifier.size(280.dp),
-                        color = overtimeColor,
-                        strokeWidth = 6.dp,
-                        strokeCap = StrokeCap.Round
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(18.dp)
+                            .background(MaterialTheme.colorScheme.outline)
                     )
-                }
-
-                if (isPreparing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(250.dp),
-                        color = MaterialTheme.colorScheme.tertiary,
-                        strokeWidth = 6.dp
-                    )
-                } else if (selectedTimeInSeconds != -1) {
-                    CircularProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.size(250.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                        strokeWidth = 8.dp,
-                        strokeCap = StrokeCap.Round
-                    )
-                } else {
-                    CircularProgressIndicator(
-                        progress = { 1f },
-                        modifier = Modifier.size(250.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                        strokeWidth = 4.dp
-                    )
-                }
-
-                if (isPreparing) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = stringResource(R.string.text_prepare),
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                        Text(
-                            text = "${prepTimeLeftSeconds}s",
-                            style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                    }
-                } else if (isOvertime) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = stringResource(R.string.text_extra),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = overtimeColor
-                        )
-                        Text(
-                            text = "+${formatTime(overtimeSeconds)}",
-                            maxLines = 1,
-                            softWrap = false,
-                            style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = if (overtimeSeconds >= 6000) 40.sp else 46.sp,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = overtimeColor
-                        )
-                    }
-                } else {
-                    Text(
-                        text = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) {
-                            "∞"
-                        } else {
-                            formatTime(timeLeftInSeconds)
-                        },
-                        maxLines = 1,
-                        softWrap = false,
-                        style = MaterialTheme.typography.displayLarge.copy(
-                            fontSize = when {
-                                selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> 80.sp
-                                timeLeftInSeconds >= 6000 -> 42.sp
-                                else -> 48.sp
-                            },
-                            fontWeight = FontWeight.Normal
-                        )
-                    )
-                }
-            }
-
-            // --- CONTROLLI E IMPOSTAZIONI TEMPO ---
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(bottom = 24.dp)
-            ) {
-                AnimatedVisibility(
-                    visible = isInitialState,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val presets = listOf(5, 10, 15, 20)
-                            presets.forEach { min ->
-                                val seconds = min * 60
-                                FilterChip(
-                                    selected = selectedTimeInSeconds == seconds,
-                                    onClick = { updateTimeSelection(seconds) },
-                                    label = { Text("${min}m") }
-                                )
+                    IconButton(
+                        onClick = {
+                            sessionHistoryList = getLocalSessionHistory(context)
+                            coroutineScope.launch {
+                                syncPendingSessionsToHealthConnect(context, healthConnectManager)
                             }
-                            FilterChip(
-                                selected = selectedTimeInSeconds == -1,
-                                onClick = { updateTimeSelection(-1) },
-                                label = { Text("∞") }
+                            showStatsDialog = true
+                        },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Text("≡", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(18.dp)
+                            .background(MaterialTheme.colorScheme.outline)
+                    )
+                    IconButton(
+                        onClick = { showPrivacyDialog = true },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Text("i", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+
+            // --- AREA CENTRALE FISSA (NON SALTA MAI QUANDO PARTE IL TIMER) ---
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                if (timerStyle == 1) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        val sandFraction = when {
+                            isPreparing -> 1f
+                            isOvertime -> 0f
+                            selectedTimeInSeconds == -1 -> if (isInitialState) 1f else (1f - (timeLeftInSeconds.coerceAtMost(60) / 120f))
+                            else -> progress.coerceIn(0f, 1f)
+                        }
+                        val isSandFlowing = isTimerRunning && !isPreparing && !isOvertime
+
+                        AutumnHourglassGraphic(
+                            topSandFraction = sandFraction,
+                            isFlowing = isSandFlowing,
+                            isOvertime = isOvertime,
+                            isPreparing = isPreparing,
+                            modifier = Modifier.size(width = 185.dp, height = 240.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (isPreparing) {
+                            Text(
+                                text = "${stringResource(R.string.text_prepare)} ${prepTimeLeftSeconds}s",
+                                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        } else if (isOvertime) {
+                            Text(
+                                text = "+${formatTime(overtimeSeconds)}",
+                                maxLines = 1,
+                                softWrap = false,
+                                style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
+                                color = overtimeColor
+                            )
+                        } else {
+                            Text(
+                                text = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) {
+                                    "∞"
+                                } else {
+                                    formatTime(timeLeftInSeconds)
+                                },
+                                maxLines = 1,
+                                softWrap = false,
+                                style = MaterialTheme.typography.displayMedium.copy(
+                                    fontWeight = FontWeight.Normal,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                            )
+                        }
+                    }
+                } else {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(280.dp)
+                    ) {
+                        if (isOvertime) {
+                            CircularProgressIndicator(
+                                progress = { 1f },
+                                modifier = Modifier.size(280.dp),
+                                color = overtimeColor,
+                                strokeWidth = 6.dp,
+                                strokeCap = StrokeCap.Round
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        if (isPreparing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(250.dp),
+                                color = MaterialTheme.colorScheme.tertiary,
+                                strokeWidth = 6.dp
+                            )
+                        } else if (selectedTimeInSeconds != -1) {
+                            CircularProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier.size(250.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                strokeWidth = 8.dp,
+                                strokeCap = StrokeCap.Round
+                            )
+                        } else {
+                            CircularProgressIndicator(
+                                progress = { 1f },
+                                modifier = Modifier.size(250.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                strokeWidth = 4.dp
+                            )
+                        }
 
-                        if (selectedTimeInSeconds != -1) {
+                        if (isPreparing) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = stringResource(R.string.text_prepare),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                                Text(
+                                    text = "${prepTimeLeftSeconds}s",
+                                    style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+                        } else if (isOvertime) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = stringResource(R.string.text_extra),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = overtimeColor
+                                )
+                                Text(
+                                    text = "+${formatTime(overtimeSeconds)}",
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    style = MaterialTheme.typography.displayLarge.copy(
+                                        fontSize = if (overtimeSeconds >= 6000) 40.sp else 46.sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = overtimeColor
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) {
+                                    "∞"
+                                } else {
+                                    formatTime(timeLeftInSeconds)
+                                },
+                                maxLines = 1,
+                                softWrap = false,
+                                style = MaterialTheme.typography.displayLarge.copy(
+                                    fontSize = when {
+                                        selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> 80.sp
+                                        timeLeftInSeconds >= 6000 -> 42.sp
+                                        else -> 48.sp
+                                    },
+                                    fontWeight = FontWeight.Normal
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // --- CONTROLLI E IMPOSTAZIONI TEMPO (ALTEZZA FISSA PER EVITARE GRADINI) ---
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .padding(bottom = 12.dp),
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    AnimatedVisibility(
+                        visible = isInitialState,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val presets = listOf(5, 10, 15, 20)
+                                presets.forEach { min ->
+                                    val seconds = min * 60
+                                    FilterChip(
+                                        selected = selectedTimeInSeconds == seconds,
+                                        onClick = { updateTimeSelection(seconds) },
+                                        label = { Text("${min}m") }
+                                    )
+                                }
+                                FilterChip(
+                                    selected = selectedTimeInSeconds == -1,
+                                    onClick = { updateTimeSelection(-1) },
+                                    label = { Text("∞") }
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            if (selectedTimeInSeconds != -1) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { if (selectedTimeInSeconds > 300) updateTimeSelection(selectedTimeInSeconds - 300) },
+                                        enabled = selectedTimeInSeconds > 300
+                                    ) { Text("-5m") }
+
+                                    OutlinedButton(
+                                        onClick = { if (selectedTimeInSeconds > 60) updateTimeSelection(selectedTimeInSeconds - 60) },
+                                        enabled = selectedTimeInSeconds > 60
+                                    ) { Text("-1m") }
+
+                                    OutlinedButton(
+                                        onClick = { updateTimeSelection(selectedTimeInSeconds + 60) }
+                                    ) { Text("+1m") }
+
+                                    OutlinedButton(
+                                        onClick = { updateTimeSelection(selectedTimeInSeconds + 300) }
+                                    ) { Text("+5m") }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(24.dp))
+                        }
+                    }
+
+                    // --- PULSANTE PRINCIPALE INIZIA / PAUSA / COMPLETA EXTRA ---
+                    if (isOvertime) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                onClick = { saveAndFinishSession(includeExtra = true) },
+                                shape = RoundedCornerShape(28.dp),
+                                modifier = Modifier
+                                    .height(52.dp)
+                                    .fillMaxWidth(0.85f),
+                                colors = ButtonDefaults.buttonColors(containerColor = overtimeColor)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.button_save_with_extra, (overtimeSeconds / 60)),
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.Black
+                                )
+                            }
+
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 OutlinedButton(
-                                    onClick = { if (selectedTimeInSeconds > 300) updateTimeSelection(selectedTimeInSeconds - 300) },
-                                    enabled = selectedTimeInSeconds > 300
-                                ) { Text("-5m") }
+                                    onClick = { resetTimerState() },
+                                    shape = RoundedCornerShape(20.dp)
+                                ) {
+                                    Text(stringResource(R.string.button_reset))
+                                }
 
                                 OutlinedButton(
-                                    onClick = { if (selectedTimeInSeconds > 60) updateTimeSelection(selectedTimeInSeconds - 60) },
-                                    enabled = selectedTimeInSeconds > 60
-                                ) { Text("-1m") }
-
-                                OutlinedButton(
-                                    onClick = { updateTimeSelection(selectedTimeInSeconds + 60) }
-                                ) { Text("+1m") }
-
-                                OutlinedButton(
-                                    onClick = { updateTimeSelection(selectedTimeInSeconds + 300) }
-                                ) { Text("+5m") }
+                                    onClick = { saveAndFinishSession(includeExtra = false) },
+                                    shape = RoundedCornerShape(20.dp)
+                                ) {
+                                    Text(stringResource(R.string.button_save_planned, (selectedTimeInSeconds / 60)))
+                                }
                             }
                         }
+                    } else {
+                        val canStart = isTimerRunning || selectedTimeInSeconds == -1 || timeLeftInSeconds > 0
 
-                        Spacer(modifier = Modifier.height(24.dp))
-                    }
-                }
-
-                // --- PULSANTE PRINCIPALE INIZIA / PAUSA / COMPLETA EXTRA ---
-                if (isOvertime) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
                         Button(
-                            onClick = { saveAndFinishSession(includeExtra = true) },
+                            onClick = { 
+                                if (!isTimerRunning && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                }
+                                isTimerRunning = !isTimerRunning 
+                            },
+                            enabled = canStart,
                             shape = RoundedCornerShape(28.dp),
                             modifier = Modifier
-                                .height(52.dp)
-                                .fillMaxWidth(0.85f),
-                            colors = ButtonDefaults.buttonColors(containerColor = overtimeColor)
+                                .height(56.dp)
+                                .width(220.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isTimerRunning) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+                            )
                         ) {
                             Text(
-                                text = stringResource(R.string.button_save_with_extra, (overtimeSeconds / 60)),
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = Color.Black
+                                text = if (isTimerRunning) {
+                                    stringResource(R.string.button_pause)
+                                } else if (!isInitialState) {
+                                    stringResource(R.string.button_resume)
+                                } else {
+                                    stringResource(R.string.button_start_meditation)
+                                },
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium)
                             )
                         }
 
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedButton(
-                                onClick = { 
-                                    isTimerRunning = false
-                                    isOvertime = false
-                                    overtimeSeconds = 0
-                                    timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
-                                    sessionStartTime = null
-                                },
-                                shape = RoundedCornerShape(20.dp)
+                        if (!isInitialState && !isTimerRunning) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(stringResource(R.string.button_reset))
-                            }
-
-                            OutlinedButton(
-                                onClick = { saveAndFinishSession(includeExtra = false) },
-                                shape = RoundedCornerShape(20.dp)
-                            ) {
-                                Text(stringResource(R.string.button_save_planned, (selectedTimeInSeconds / 60)))
-                            }
-                        }
-                    }
-                } else {
-                    val canStart = isTimerRunning || selectedTimeInSeconds == -1 || timeLeftInSeconds > 0
-
-                    Button(
-                        onClick = { 
-                            if (!isTimerRunning && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                OutlinedButton(
+                                    onClick = { resetTimerState() },
+                                    shape = RoundedCornerShape(20.dp)
+                                ) {
+                                    Text(stringResource(R.string.button_reset))
                                 }
-                            }
-                            isTimerRunning = !isTimerRunning 
-                        },
-                        enabled = canStart,
-                        shape = RoundedCornerShape(28.dp),
-                        modifier = Modifier
-                            .height(56.dp)
-                            .width(220.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isTimerRunning) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Text(
-                            text = if (isTimerRunning) {
-                                stringResource(R.string.button_pause)
-                            } else if (!isInitialState) {
-                                stringResource(R.string.button_resume)
-                            } else {
-                                stringResource(R.string.button_start_meditation)
-                            },
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium)
-                        )
-                    }
 
-                    if (!isInitialState && !isTimerRunning) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedButton(
-                                onClick = { 
-                                    timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds 
-                                    sessionStartTime = null
-                                },
-                                shape = RoundedCornerShape(20.dp)
-                            ) {
-                                Text(stringResource(R.string.button_reset))
-                            }
-
-                            Button(
-                                onClick = { 
-                                    saveAndFinishSession(includeExtra = false)
-                                },
-                                shape = RoundedCornerShape(20.dp)
-                            ) {
-                                Text(stringResource(R.string.button_save_and_reset))
+                                Button(
+                                    onClick = { 
+                                        saveAndFinishSession(includeExtra = false)
+                                    },
+                                    shape = RoundedCornerShape(20.dp)
+                                ) {
+                                    Text(stringResource(R.string.button_save_and_reset))
+                                }
                             }
                         }
                     }
@@ -998,208 +1193,322 @@ fun MeditationTimerScreen(
             var prepInputText by remember { mutableStateOf(prepTimeSeconds.toString()) }
             var intervalInputText by remember { mutableStateOf(intervalMins.toString()) }
             val dndGranted = remember { isDndPermissionGranted(context) }
+            var previewGongJob by remember { mutableStateOf<Job?>(null) }
+
+            fun playPreviewGong(freq: Double) {
+                gongFreqHz = freq
+                saveGongFrequency(context, freq)
+                previewGongJob?.cancel()
+                previewGongJob = coroutineScope.launch(Dispatchers.Default) {
+                    playGongSound(context, freq, repeatCount = 1)
+                }
+            }
 
             AlertDialog(
-                onDismissRequest = { showSettingsDialog = false },
-                title = @Composable { Text(text = stringResource(R.string.dialog_settings_title)) },
+                onDismissRequest = {
+                    previewGongJob?.cancel()
+                    showSettingsDialog = false
+                },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(24.dp),
+                title = @Composable {
+                    Text(
+                        text = stringResource(R.string.dialog_settings_title),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                },
                 text = @Composable {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // 1. RITARDO PREPARAZIONE E 3. CAMPANE INTERMEDIE AFFIANCATI
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        // 1. RITARDO PREPARAZIONE E CAMPANE INTERMEDIE IN CARD AUTUNNALE
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.settings_prep_delay),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    minLines = 2
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                OutlinedTextField(
-                                    value = prepInputText,
-                                    onValueChange = { input ->
-                                        if (input.all { it.isDigit() } && input.length <= 3) {
-                                            prepInputText = input
-                                            val secs = input.toIntOrNull() ?: 0
-                                            prepTimeSeconds = secs
-                                            savePrepTime(context, secs)
-                                        }
-                                    },
-                                    label = { Text(stringResource(R.string.settings_prep_label), fontSize = 11.sp) },
-                                    placeholder = { Text(stringResource(R.string.settings_prep_placeholder)) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.settings_interval_gong),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    minLines = 2
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                OutlinedTextField(
-                                    value = intervalInputText,
-                                    onValueChange = { input ->
-                                        if (input.all { it.isDigit() } && input.length <= 3) {
-                                            intervalInputText = input
-                                            val mins = input.toIntOrNull() ?: 0
-                                            intervalMins = mins
-                                            saveIntervalMins(context, mins)
-                                        }
-                                    },
-                                    label = { Text(stringResource(R.string.settings_interval_label), fontSize = 11.sp) },
-                                    placeholder = { Text(stringResource(R.string.settings_interval_placeholder)) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // 2. FREQUENZA CAMPANA TIBETANA (CON ANTEPRIMA AUDIO AL TAP)
-                        Text(
-                            text = stringResource(R.string.settings_gong_sound),
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            FilterChip(
-                                selected = gongFreqHz == 432.0,
-                                onClick = { 
-                                    gongFreqHz = 432.0
-                                    saveGongFrequency(context, 432.0)
-                                    coroutineScope.launch(Dispatchers.Default) {
-                                        playGongSound(context, 432.0, repeatCount = 1)
-                                    }
-                                },
-                                label = { Text("432 Hz 🔔", fontSize = 11.sp) }
-                            )
-                            FilterChip(
-                                selected = gongFreqHz == 528.0,
-                                onClick = { 
-                                    gongFreqHz = 528.0
-                                    saveGongFrequency(context, 528.0)
-                                    coroutineScope.launch(Dispatchers.Default) {
-                                        playGongSound(context, 528.0, repeatCount = 1)
-                                    }
-                                },
-                                label = { Text("528 Hz 🔔", fontSize = 11.sp) }
-                            )
-                            FilterChip(
-                                selected = gongFreqHz == 216.0,
-                                onClick = { 
-                                    gongFreqHz = 216.0
-                                    saveGongFrequency(context, 216.0)
-                                    coroutineScope.launch(Dispatchers.Default) {
-                                        playGongSound(context, 216.0, repeatCount = 1)
-                                    }
-                                },
-                                label = { Text("216 Hz 🔔", fontSize = 11.sp) }
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider()
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // 4. OPZIONE INTERATTIVA NON DISTURBARE (CON SWITCH)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                Text(
-                                    text = stringResource(R.string.settings_dnd_mode),
-                                    style = MaterialTheme.typography.titleSmall
-                                )
-                                Text(
-                                    text = if (autoDndEnabled) stringResource(R.string.settings_dnd_active) else stringResource(R.string.settings_dnd_inactive),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = autoDndEnabled,
-                                onCheckedChange = { newState ->
-                                    autoDndEnabled = newState
-                                    saveAutoDnd(context, newState)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.settings_prep_delay),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        minLines = 2
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    OutlinedTextField(
+                                        value = prepInputText,
+                                        onValueChange = { input ->
+                                            if (input.all { it.isDigit() } && input.length <= 3) {
+                                                prepInputText = input
+                                                val secs = input.toIntOrNull() ?: 0
+                                                prepTimeSeconds = secs
+                                                savePrepTime(context, secs)
+                                            }
+                                        },
+                                        label = { Text(stringResource(R.string.settings_prep_label), fontSize = 11.sp) },
+                                        placeholder = { Text(stringResource(R.string.settings_prep_placeholder)) },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
                                 }
-                            )
-                        }
 
-                        if (!dndGranted && autoDndEnabled) {
-                            TextButton(
-                                onClick = { requestDndAccess(context) },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(stringResource(R.string.settings_dnd_authorize), fontSize = 11.sp)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.settings_interval_gong),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        minLines = 2
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    OutlinedTextField(
+                                        value = intervalInputText,
+                                        onValueChange = { input ->
+                                            if (input.all { it.isDigit() } && input.length <= 3) {
+                                                intervalInputText = input
+                                                val mins = input.toIntOrNull() ?: 0
+                                                intervalMins = mins
+                                                saveIntervalMins(context, mins)
+                                            }
+                                        },
+                                        label = { Text(stringResource(R.string.settings_interval_label), fontSize = 11.sp) },
+                                        placeholder = { Text(stringResource(R.string.settings_interval_placeholder)) },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
-                        HorizontalDivider()
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // 5. STATO HEALTH CONNECT E PRIVACY
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        // 2. SUONO CAMPANA E STILE VISIVO IN CARD AUTUNNALE
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                         ) {
-                            Text(
-                                text = stringResource(R.string.settings_health_status),
-                                style = MaterialTheme.typography.titleSmall,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                text = if (isHealthConnected) stringResource(R.string.settings_health_connected) else stringResource(R.string.settings_health_disconnected),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isHealthConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.settings_gong_sound),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    FilterChip(
+                                        selected = gongFreqHz == 432.0,
+                                        onClick = { playPreviewGong(432.0) },
+                                        label = { Text("432 Hz", fontSize = 12.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = gongFreqHz == 528.0,
+                                        onClick = { playPreviewGong(528.0) },
+                                        label = { Text("528 Hz", fontSize = 12.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = gongFreqHz == 216.0,
+                                        onClick = { playPreviewGong(216.0) },
+                                        label = { Text("216 Hz", fontSize = 12.sp) }
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    text = stringResource(R.string.settings_timer_style),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    FilterChip(
+                                        selected = timerStyle == 1,
+                                        onClick = {
+                                            timerStyle = 1
+                                            saveTimerStyle(context, 1)
+                                        },
+                                        label = { Text(stringResource(R.string.settings_timer_style_hourglass)) }
+                                    )
+                                    FilterChip(
+                                        selected = timerStyle == 0,
+                                        onClick = {
+                                            timerStyle = 0
+                                            saveTimerStyle(context, 0)
+                                        },
+                                        label = { Text(stringResource(R.string.settings_timer_style_circle)) }
+                                    )
+                                }
+                            }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        // 3. NON DISTURBARE IN CARD AUTUNNALE
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                        Text(
+                                            text = stringResource(R.string.settings_dnd_mode),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = if (autoDndEnabled) stringResource(R.string.settings_dnd_active) else stringResource(R.string.settings_dnd_inactive),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Switch(
+                                        checked = autoDndEnabled,
+                                        onCheckedChange = { newState ->
+                                            autoDndEnabled = newState
+                                            saveAutoDnd(context, newState)
+                                        }
+                                    )
+                                }
 
-                        if (isHealthConnected) {
-                            OutlinedButton(
-                                onClick = { connectToHealth() },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(stringResource(R.string.settings_health_reconnect))
+                                if (!dndGranted && autoDndEnabled) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    TextButton(
+                                        onClick = { requestDndAccess(context) },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(stringResource(R.string.settings_dnd_authorize), fontSize = 11.sp)
+                                    }
+                                }
                             }
-                        } else {
-                            Button(
-                                onClick = { connectToHealth() },
-                                modifier = Modifier.fillMaxWidth()
+                        }
+
+                        // 4. GOOGLE HEALTH CONNECT IN CARD AUTUNNALE
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp)
                             ) {
-                                Text(stringResource(R.string.settings_health_connect))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.settings_health_status),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = if (isHealthConnected) stringResource(R.string.settings_health_connected) else stringResource(R.string.settings_health_disconnected),
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                        color = if (isHealthConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                if (isHealthConnected) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (!isResyncing) {
+                                                isResyncing = true
+                                                coroutineScope.launch {
+                                                    try {
+                                                        val ok = resyncHistoryToHealthConnect(context, healthConnectManager)
+                                                        Toast.makeText(
+                                                            context,
+                                                            if (ok) toastResyncDone else toastHealthDenied,
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    } finally {
+                                                        isResyncing = false
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        enabled = !isResyncing,
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        if (isResyncing) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(18.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                        }
+                                        Text(stringResource(R.string.settings_health_resync))
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    OutlinedButton(
+                                        onClick = { connectToHealth() },
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(stringResource(R.string.settings_health_reconnect))
+                                    }
+                                } else {
+                                    Button(
+                                        onClick = { connectToHealth() },
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(stringResource(R.string.settings_health_connect))
+                                    }
+                                }
                             }
                         }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showSettingsDialog = false }) {
+                    Button(
+                        onClick = {
+                            previewGongJob?.cancel()
+                            showSettingsDialog = false
+                        },
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
                         Text(stringResource(R.string.button_close))
                     }
                 }
             )
         }
 
-        // --- DIALOG STATISTICHE E STORICO CON CANCELLAZIONE 📊 ---
+        // --- DIALOG STATISTICHE E STORICO CON CANCELLAZIONE ---
         if (showStatsDialog) {
             val totalMinutes = sessionHistoryList.sumOf { it.durationMinutes }
             val totalSessions = sessionHistoryList.size
@@ -1207,7 +1516,15 @@ fun MeditationTimerScreen(
 
             AlertDialog(
                 onDismissRequest = { showStatsDialog = false },
-                title = @Composable { Text(text = stringResource(R.string.dialog_stats_title)) },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(24.dp),
+                title = @Composable {
+                    Text(
+                        text = stringResource(R.string.dialog_stats_title),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                },
                 text = @Composable {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
@@ -1216,10 +1533,13 @@ fun MeditationTimerScreen(
                         ) {
                             Card(
                                 modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(stringResource(R.string.stats_minutes), style = MaterialTheme.typography.labelMedium)
@@ -1229,10 +1549,13 @@ fun MeditationTimerScreen(
 
                             Card(
                                 modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(stringResource(R.string.stats_sessions), style = MaterialTheme.typography.labelMedium)
@@ -1242,10 +1565,13 @@ fun MeditationTimerScreen(
 
                             Card(
                                 modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(stringResource(R.string.stats_streak), style = MaterialTheme.typography.labelMedium)
@@ -1258,38 +1584,49 @@ fun MeditationTimerScreen(
 
                         Text(
                             text = stringResource(R.string.stats_history_title),
-                            style = MaterialTheme.typography.titleSmall
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(8.dp))
 
                         if (sessionHistoryList.isEmpty()) {
-                            Text(
-                                text = stringResource(R.string.stats_history_empty),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(vertical = 12.dp)
-                            )
+                            Card(
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.stats_history_empty),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(16.dp)
+                                )
+                            }
                         } else {
                             LazyColumn(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(max = 240.dp)
+                                    .heightIn(max = 240.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 items(sessionHistoryList) { session ->
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 4.dp)
+                                    Card(
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(
-                                            modifier = Modifier.fillMaxWidth(),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 8.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Column {
                                                 Text(
                                                     text = stringResource(R.string.stats_history_item, session.durationMinutes),
-                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.onSurface
                                                 )
                                                 Text(
                                                     text = session.dateFormatted,
@@ -1298,11 +1635,13 @@ fun MeditationTimerScreen(
                                                 )
                                             }
 
-                                            IconButton(onClick = { sessionToDelete = session }) {
-                                                Text("🗑️", fontSize = 18.sp)
+                                            IconButton(
+                                                onClick = { sessionToDelete = session },
+                                                modifier = Modifier.size(34.dp)
+                                            ) {
+                                                Text("✕", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                             }
                                         }
-                                        HorizontalDivider(modifier = Modifier.padding(top = 4.dp))
                                     }
                                 }
                             }
@@ -1310,7 +1649,10 @@ fun MeditationTimerScreen(
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showStatsDialog = false }) {
+                    Button(
+                        onClick = { showStatsDialog = false },
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
                         Text(stringResource(R.string.button_close))
                     }
                 }
@@ -1321,7 +1663,15 @@ fun MeditationTimerScreen(
         sessionToDelete?.let { session ->
             AlertDialog(
                 onDismissRequest = { sessionToDelete = null },
-                title = { Text(stringResource(R.string.dialog_delete_title)) },
+                containerColor = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(24.dp),
+                title = {
+                    Text(
+                        text = stringResource(R.string.dialog_delete_title),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                },
                 text = {
                     Text(stringResource(R.string.dialog_delete_message, session.durationMinutes, session.dateFormatted))
                 },
@@ -1334,18 +1684,28 @@ fun MeditationTimerScreen(
                                     Instant.ofEpochSecond(session.endEpochSec)
                                 )
                                 deleteSessionFromLocalHistory(context, session.rawString)
+                                clearPendingWatchSessions(
+                                    context,
+                                    getPendingWatchSessions(context)
+                                        .filter { it.startEpochSec == session.startEpochSec }
+                                        .map { it.rawString }
+                                )
                                 sessionHistoryList = getLocalSessionHistory(context)
                                 sessionToDelete = null
                                 Toast.makeText(context, context.getString(R.string.toast_session_deleted), Toast.LENGTH_SHORT).show()
                             }
                         },
+                        shape = RoundedCornerShape(20.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
                         Text(stringResource(R.string.button_delete))
                     }
                 },
                 dismissButton = {
-                    OutlinedButton(onClick = { sessionToDelete = null }) {
+                    OutlinedButton(
+                        onClick = { sessionToDelete = null },
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
                         Text(stringResource(R.string.button_cancel))
                     }
                 }
@@ -1371,26 +1731,43 @@ fun HealthPrivacyRationaleDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(24.dp),
         title = {
             Text(
                 text = stringResource(R.string.privacy_dialog_title),
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.primary
             )
         },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.privacy_dialog_health_usage),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = stringResource(R.string.privacy_dialog_health_guarantee),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.privacy_dialog_health_usage),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                        Text(
+                            text = stringResource(R.string.privacy_dialog_health_guarantee),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 OutlinedButton(
                     onClick = {
                         try {
@@ -1400,11 +1777,11 @@ fun HealthPrivacyRationaleDialog(onDismiss: () -> Unit) {
                             e.printStackTrace()
                         }
                     },
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(stringResource(R.string.privacy_dialog_button_policy))
                 }
-                HorizontalDivider()
                 Text(
                     text = stringResource(R.string.settings_app_version, BuildConfig.VERSION_NAME),
                     style = MaterialTheme.typography.bodySmall,
@@ -1414,11 +1791,204 @@ fun HealthPrivacyRationaleDialog(onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss) {
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(20.dp)
+            ) {
                 Text(stringResource(R.string.privacy_dialog_button_understand))
             }
         }
     )
+}
+
+@Composable
+fun AutumnHourglassGraphic(
+    topSandFraction: Float,
+    isFlowing: Boolean,
+    isOvertime: Boolean,
+    isPreparing: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val grainPhase = if (isFlowing) {
+        val infiniteTransition = rememberInfiniteTransition(label = "sand_grains")
+        val phase by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 5200, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "grain_phase"
+        )
+        phase
+    } else {
+        0f
+    }
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val capHeight = 10.dp.toPx()
+        val glassTop = capHeight + 4.dp.toPx()
+        val glassBottom = h - capHeight - 4.dp.toPx()
+        val midY = h / 2f
+        val leftX = w * 0.14f
+        val rightX = w * 0.86f
+        val neckHalf = 5.dp.toPx()
+        val centerX = w / 2f
+
+        val topBulbPath = Path().apply {
+            moveTo(leftX, glassTop)
+            lineTo(rightX, glassTop)
+            cubicTo(
+                rightX, glassTop + (midY - glassTop) * 0.62f,
+                centerX + neckHalf, midY - (midY - glassTop) * 0.25f,
+                centerX + neckHalf, midY
+            )
+            lineTo(centerX - neckHalf, midY)
+            cubicTo(
+                centerX - neckHalf, midY - (midY - glassTop) * 0.25f,
+                leftX, glassTop + (midY - glassTop) * 0.62f,
+                leftX, glassTop
+            )
+            close()
+        }
+
+        val bottomBulbPath = Path().apply {
+            moveTo(centerX - neckHalf, midY)
+            lineTo(centerX + neckHalf, midY)
+            cubicTo(
+                centerX + neckHalf, midY + (glassBottom - midY) * 0.25f,
+                rightX, glassBottom - (glassBottom - midY) * 0.62f,
+                rightX, glassBottom
+            )
+            lineTo(leftX, glassBottom)
+            cubicTo(
+                leftX, glassBottom - (glassBottom - midY) * 0.62f,
+                centerX - neckHalf, midY + (glassBottom - midY) * 0.25f,
+                centerX - neckHalf, midY
+            )
+            close()
+        }
+
+        val sandBrushTop = Brush.verticalGradient(
+            colors = if (isPreparing) {
+                listOf(AutumnSandLight, AutumnGlassOutline)
+            } else {
+                listOf(AutumnSandLight, AutumnSandDeep)
+            },
+            startY = glassTop,
+            endY = midY
+        )
+
+        val sandBrushBottom = Brush.verticalGradient(
+            colors = if (isOvertime) {
+                listOf(OvertimeGold, AutumnSandLight)
+            } else {
+                listOf(AutumnSandLight, AutumnSandDeep)
+            },
+            startY = midY,
+            endY = glassBottom
+        )
+
+        // 1. Riflesso interno del vetro
+        drawPath(path = topBulbPath, color = AutumnGlassOutline.copy(alpha = 0.08f))
+        drawPath(path = bottomBulbPath, color = AutumnGlassOutline.copy(alpha = 0.08f))
+
+        // 2. Sabbia nell'ampolla superiore (con leggera conca centrale quando scorre)
+        val clampedTop = topSandFraction.coerceIn(0f, 1f)
+        if (clampedTop > 0.005f) {
+            val bulbHeight = midY - glassTop
+            val sandTopY = midY - bulbHeight * clampedTop
+            val funnelDip = if (isFlowing) 5.dp.toPx() * clampedTop else 0f
+            val topSandPath = Path().apply {
+                moveTo(0f, sandTopY)
+                quadraticTo(centerX, sandTopY + funnelDip, w, sandTopY)
+                lineTo(w, midY + 2f)
+                lineTo(0f, midY + 2f)
+                close()
+            }
+            clipPath(topBulbPath) {
+                drawPath(path = topSandPath, brush = sandBrushTop)
+            }
+        }
+
+        // 3. Sabbia nell'ampolla inferiore (mucchietto morbido che cresce)
+        val bottomFraction = if (isOvertime) 1f else (1f - clampedTop).coerceIn(0f, 1f)
+        if (bottomFraction > 0.005f) {
+            val bulbHeight = glassBottom - midY
+            val fillHeight = bulbHeight * bottomFraction
+            val sandSurfaceY = glassBottom - fillHeight
+            val moundPeakY = (sandSurfaceY - 10.dp.toPx() * (1f - bottomFraction)).coerceAtLeast(midY + 2f)
+
+            val moundPath = Path().apply {
+                moveTo(0f, glassBottom + 4f)
+                lineTo(0f, sandSurfaceY + 6.dp.toPx())
+                quadraticTo(centerX, moundPeakY, w, sandSurfaceY + 6.dp.toPx())
+                lineTo(w, glassBottom + 4f)
+                close()
+            }
+            clipPath(bottomBulbPath) {
+                drawPath(path = moundPath, brush = sandBrushBottom)
+            }
+        }
+
+        // 4. Chicchi di sabbia dorata che cadono dal collo fino al mucchietto inferiore
+        if (isFlowing) {
+            val streamStartY = midY + 1.dp.toPx()
+            val streamEndY = if (bottomFraction > 0.005f) {
+                val fillH = (glassBottom - midY) * bottomFraction
+                (glassBottom - fillH - 3.dp.toPx()).coerceAtLeast(streamStartY + 12.dp.toPx())
+            } else {
+                glassBottom - 4.dp.toPx()
+            }
+            val streamHeight = (streamEndY - streamStartY).coerceAtLeast(1f)
+            val grainCount = 7
+            val horizontalOffsets = floatArrayOf(0f, -1.1f, 1.0f, -0.5f, 1.2f, -0.9f, 0.4f)
+
+            for (i in 0 until grainCount) {
+                val progressY = ((i.toFloat() / grainCount) + grainPhase) % 1f
+                val yPos = streamStartY + progressY * streamHeight
+                val xJitter = horizontalOffsets[i] * 1.dp.toPx()
+                val radius = if (i % 2 == 0) 2.1.dp.toPx() else 1.5.dp.toPx()
+                val grainColor = if (i % 3 == 0) OvertimeGold else AutumnSandLight
+                drawCircle(
+                    color = grainColor,
+                    radius = radius,
+                    center = Offset(centerX + xJitter, yPos)
+                )
+            }
+        }
+
+        // 5. Contorno in vetro ambrato delle due ampolle
+        val outlineColor = if (isOvertime) OvertimeGold else AutumnGlassOutline
+        drawPath(
+            path = topBulbPath,
+            color = outlineColor,
+            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+        )
+        drawPath(
+            path = bottomBulbPath,
+            color = outlineColor,
+            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+        )
+
+        // 6. Base e Capitello in legno/bronzo autunnale
+        val capWidth = w * 0.82f
+        val capLeft = (w - capWidth) / 2f
+        drawRoundRect(
+            color = AutumnWoodFrame,
+            topLeft = Offset(capLeft, 2.dp.toPx()),
+            size = Size(capWidth, capHeight),
+            cornerRadius = CornerRadius(5.dp.toPx(), 5.dp.toPx())
+        )
+        drawRoundRect(
+            color = AutumnWoodFrame,
+            topLeft = Offset(capLeft, h - capHeight - 2.dp.toPx()),
+            size = Size(capWidth, capHeight),
+            cornerRadius = CornerRadius(5.dp.toPx(), 5.dp.toPx())
+        )
+    }
 }
 
 fun formatTime(totalSeconds: Int): String {

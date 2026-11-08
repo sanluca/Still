@@ -7,24 +7,24 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
 val DarkWarmColorScheme = darkColorScheme(
-    primary = WarmPeachPrimary, // #86C7A3 (Verde Salvia)
-    onPrimary = WarmPeachOnPrimary, // #082416 (Verde Foresta scuro)
-    primaryContainer = DarkWarmPrimaryContainer, // #2B4A3C
-    onPrimaryContainer = WarmIvoryText, // #E2ECE6
-    secondary = WarmTitleStill, // #6BAF8B (Verde Eucalipto)
-    onSecondary = WarmPeachOnPrimary, // #082416
-    secondaryContainer = DarkWarmSecondaryContainer, // #21382E (Verde Pino morbido)
-    onSecondaryContainer = WarmIvoryText, // #E2ECE6
-    tertiary = WarmTitleStill, // #6BAF8B
-    onTertiary = WarmPeachOnPrimary, // #082416
-    background = DarkWarmBackground, // #060D0A (Nero Bosco profondo)
-    onBackground = WarmIvoryText, // #E2ECE6
-    surface = DarkWarmSurface, // #111E18
-    onSurface = WarmIvoryText, // #E2ECE6
-    surfaceVariant = DarkWarmSurfaceVariant, // #16261F (Verde Muschio scuro)
-    onSurfaceVariant = WarmSandSubtitles, // #A3B8AD
-    outline = DarkWarmOutline, // #2F4D3F
-    outlineVariant = DarkWarmOutline, // #2F4D3F
+    primary = WarmPeachPrimary, // #E08E45 (Ambra Autunnale)
+    onPrimary = WarmPeachOnPrimary, // #261104 (Corteccia scura)
+    primaryContainer = DarkWarmPrimaryContainer, // #63371E
+    onPrimaryContainer = WarmIvoryText, // #F2E8DF
+    secondary = WarmTitleStill, // #D97F4B (Terracotta Morbida)
+    onSecondary = WarmPeachOnPrimary, // #261104
+    secondaryContainer = DarkWarmSecondaryContainer, // #472515 (Castagna caldo)
+    onSecondaryContainer = WarmIvoryText, // #F2E8DF
+    tertiary = WarmTitleStill, // #D97F4B
+    onTertiary = WarmPeachOnPrimary, // #261104
+    background = DarkWarmBackground, // #0D0806 (Corteccia Notturna)
+    onBackground = WarmIvoryText, // #F2E8DF
+    surface = DarkWarmSurface, // #1E1410
+    onSurface = WarmIvoryText, // #F2E8DF
+    surfaceVariant = DarkWarmSurfaceVariant, // #2A1B15
+    onSurfaceVariant = WarmSandSubtitles, // #C4AF9E
+    outline = DarkWarmOutline, // #4A3024
+    outlineVariant = DarkWarmOutline, // #4A3024
 )
 
 @Composable

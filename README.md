@@ -14,6 +14,7 @@ Still è un'applicazione open source per Android e Wear OS, concepita per la med
 ## Come funziona l'App
 
 ### 📱 App Smartphone (Android)
+- **Doppio Stile Visivo (Clessidra & Cerchio)**: Scegli nelle impostazioni tra la **Clessidra Zen** animata (con granelli di sabbia a caduta lenta e modalità `∞` che si stabilizza a metà) e il **Cerchio Classico** minimale.
 - **Quadrante & Selezione Rapida**: Scegli il tempo dai preset immediati (`5m`, `10m`, `15m`, `20m`) oppure seleziona **∞ (Infinito)** per una sessione libera senza limiti di tempo.
 - **Pulsanti di Regolazione Fine**: Aggiungi o togli tempo al timer pre-esistente con precisione tramite i pulsanti `-5m`, `-1m`, `+1m` e `+5m`.
 - **Ritardo Iniziale (Preparazione)**: Puoi impostare un tempo di preparazione in secondi dalle impostazioni: Still mostrerà un conto alla rovescia dedicato (*"In preparazione"*) prima di far suonare il gong di inizio sessione.
@@ -22,13 +23,13 @@ Still è un'applicazione open source per Android e Wear OS, concepita per la med
 - **Non Disturbare Automatico (DND)**: Se abilitato e autorizzato nelle impostazioni di sistema, Still attiva automaticamente la modalità Non Disturbare non appena premi *'Inizia'*, ripristinando lo stato audio precedente quando premi *'Pausa'* o *'Salva'*.
 - **Overtime (Minuti Extra ✨)**: Al raggiungimento del tempo previsto suonano 3 rintocchi finali. Il timer non si arresta forzatamente, ma continua a conteggiare i minuti extra (Overtime), consentendoti di decidere se salvare solo il tempo pianificato oppure includere i minuti extra.
 - **Foreground Service & WakeLock**: All'avvio del timer, l'app avvia un *Foreground Service* (`StillTimerService`, tipo `mediaPlayback`) abbinato a un `PowerManager.WakeLock`. Puoi tranquillamente **spegnere lo schermo** o passare ad altre app: il conteggio prosegue in modo rigoroso e affidabile basandosi su `SystemClock.elapsedRealtime()`.
-- **Salvataggio & Storico Locale**: Alla fine di ogni sessione, Still registra l'evento nello **Storico Locale (📊)** (con possibilità di eliminare le singole voci) e lo sincronizza con Google Salute.
-- **Coda Offline**: Se Health Connect non è ancora configurato o autorizzato al momento del salvataggio, le sessioni vengono trattenute in una coda locale e sincronizzate automaticamente alla prima apertura utile.
+- **Salvataggio & Storico Locale**: Alla fine di ogni sessione, Still registra sempre l'evento nello **Storico Locale (`≡`)** (con statistiche, serie di giorni consecutivi e possibilità di eliminare le singole voci) e, se collegato, lo sincronizza con Google Salute senza duplicati.
+- **Coda di Sincronizzazione & Risincronizzazione Storico**: Se Google Salute è collegato ma temporaneamente non disponibile, la sessione viene accodata e inviata automaticamente al rientro. Se invece colleghi Google Salute in un secondo momento, puoi inviare tutto lo storico pregresso con un tocco tramite il pulsante **"Risincronizza storico"** nelle impostazioni.
 
 ### ⌚ App Orologio (Wear OS)
-- **Interfaccia Ottimizzata per Schermi Circolari**: Visualizzazione a scorrimento (`ScalingLazyColumn`) con anello di avanzamento e pulsanti `[-]` e `[+]` per regolare la durata.
+- **Interfaccia Ottimizzata per Schermi Circolari**: Navigazione fluida a pagine (`VerticalPager` e `HorizontalPager`) con anello di avanzamento, pulsanti `[-]` / `[+]` e supporto alla **corona rotante / ghiera** per regolare la durata.
 - **Feedback Aptico & Audio**: Rintocco con vibrazione aptica dell'orologio (`triggerHapticGong`) sincronizzato al gong audio (1 rintocco all'inizio, 3 rintocchi all'inizio dell'overtime).
-- **Impostazioni da Polso**: Scorrendo verso il basso puoi scegliere la frequenza del gong (432Hz, 528Hz, 216Hz) e regolare i secondi di preparazione (a step di ±5 secondi).
+- **Impostazioni da Polso (4 Schede Orizzontali)**: Scorrendo verso il basso accedi a 4 pagine di configurazione: **Ritardo di preparazione** (±5s), **Frequenza del gong** (432Hz, 528Hz, 216Hz con anteprima), **Modalità avviso** (Suono + Vibrazione, Solo Suono, Solo Vibrazione) e **Volume del gong** (20%–100%).
 - **Modalità Ambient & Risparmio Energetico**:
   - L'Activity implementa `AmbientModeSupport`: quando abbassi il polso o dopo qualche secondo di inattività, lo schermo entra in **Modalità Ambient** (Always-on a 1 Hz, sfondo nero puro `Color.Black` a contrasto per preservare l'autonomia della batteria e prevenire il burn-in del pannello OLED).
   - Il servizio di background dell'orologio (`StillTimerService`) sfrutta `PowerManager.PARTIAL_WAKE_LOCK`: il timer continua a calcolare il tempo esatto, vibrando e suonando anche a schermo oscurato o spento.
@@ -51,7 +52,7 @@ Still adotta un approccio rigoroso e trasparente alla tutela dei dati personali:
 ---
 
 ## 🛠️ Scelte Tecniche e Architettura
-- **UI Dichiarativa**: Realizzata interamente con **Jetpack Compose** (smartphone) e **Wear Compose Material 3** con `ScalingLazyColumn` (smartwatch).
+- **UI Dichiarativa**: Realizzata interamente con **Jetpack Compose Material 3** sia su smartphone che su smartwatch (con `VerticalPager`, `HorizontalPager` e input rotante nativo).
 - **Health Connect Client**: Utilizza le API ufficiali `androidx.health.connect.client.HealthConnectClient`.
 - **Servizi in Background e Affidabilità**:
   - Smartphone: `ForegroundService` con tipo `mediaPlayback` e `PARTIAL_WAKE_LOCK` dinamico calibrato sulla durata della sessione.
@@ -89,6 +90,7 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 ## How It Works
 
 ### 📱 Smartphone App (Android)
+- **Dual Visual Timer Style (Hourglass & Circle)**: Switch in settings between the animated **Zen Hourglass** (with slow-falling sand grains and `∞` mode settling at half) and the minimal **Classic Circle**.
 - **Quick Presets & Open Mode**: Choose from instant presets (`5m`, `10m`, `15m`, `20m`) or select **∞ (Unlimited)** for an open-ended meditation session.
 - **Fine Duration Controls**: Adjust the timer with precision using `-5m`, `-1m`, `+1m`, and `+5m` buttons.
 - **Preparation Delay**: Set a custom preparation countdown in seconds before the opening gong sounds.
@@ -97,12 +99,12 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 - **Automatic Do Not Disturb (DND)**: When enabled and authorized in system settings, Still automatically activates Do Not Disturb when you press *Start* and restores your previous interruption filter when you *Pause* or *Save*.
 - **Overtime (Extra Minutes ✨)**: When the planned time finishes, 3 closing gongs chime. Instead of abruptly stopping, the timer counts extra minutes (Overtime), letting you save either the planned duration or include the extra time.
 - **Foreground Service & Dynamic WakeLock**: Uses a `mediaPlayback` Foreground Service (`StillTimerService`) paired with a dynamic `PowerManager.PARTIAL_WAKE_LOCK` and `SystemClock.elapsedRealtime()` so the timer and chimes remain accurate even with the screen off.
-- **Local History & Offline Queue**: Sessions are logged locally (**📊**) and synced to Google Health Connect (or queued locally if Health Connect is not yet configured).
+- **Local History & Smart Health Sync**: Every completed session is saved to the **Local History (`≡`)** with stats and streak tracking, and synced to Google Health Connect with deterministic deduplication (`clientRecordId`). If you connect Health Connect later on, you can push your entire local history at any time via the **"Resync history"** button in settings.
 
 ### ⌚ Smartwatch App (Wear OS)
-- **Circular Display UI**: Built with `ScalingLazyColumn`, circular progress ring, and `[-]` / `[+]` duration controls.
+- **Circular Display UI**: Page-based layout (`VerticalPager` & `HorizontalPager`) with circular progress ring, `[-]` / `[+]` duration buttons, and **rotary crown / bezel** support.
 - **Haptic & Audio Chimes**: Synchronized wrist vibration (`triggerHapticGong`) and speaker gong (1 chime at start, 3 chimes at completion, plus automatic wake-up of the save screen).
-- **On-Wrist Settings**: Scroll down to select the gong frequency (`432Hz`, `528Hz`, `216Hz`) and preparation delay (±5s steps).
+- **On-Wrist Settings (4 Horizontal Cards)**: Swipe down to configure **Preparation delay** (±5s), **Gong frequency** (`432Hz`, `528Hz`, `216Hz`), **Alert mode** (Sound + Vibration, Sound only, Vibration only), and **Gong volume** (20%–100%).
 - **Ambient Mode & Battery Efficiency**: Supports `AmbientModeSupport` (pure black OLED background in Always-On mode) and a dynamic `PARTIAL_WAKE_LOCK` inside `StillTimerService`.
 - **Quick Launch Tile**: Includes a Wear OS Tile (`StillTileService`) to open the timer with a single tap.
 - **Bluetooth Sync & Offline Backup**: Communicates with the phone via Google Play Services `Wearable Data Layer` (`DataClient`), queuing completed watch sessions offline if the phone is out of reach and syncing automatically upon reconnection.
@@ -118,7 +120,7 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 ---
 
 ## 🛠️ Technical Architecture & Requirements
-- **UI**: Jetpack Compose (Phone) & Wear Compose Material 3 (Watch).
+- **UI**: Jetpack Compose Material 3 on both Phone and Watch.
 - **Languages Supported**: English and Italian (both Phone and Watch).
 - **System Requirements**:
   - **Smartphone**: Android 8.0+ (`minSdk 26`).

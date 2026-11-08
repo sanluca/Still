@@ -76,7 +76,10 @@ class WearListenerService : WearableListenerService() {
                         addSessionToLocalHistory(applicationContext, durationSec, startInstant, endInstant)
 
                         // 2. Salviamo la sessione nella coda in sospeso per Health Connect (verrà inviata appena l'app va in primo piano)
-                        savePendingWatchSession(applicationContext, durationSec, startInstant, endInstant)
+                        // Solo se Health Connect è stato collegato: altrimenti la coda crescerebbe all'infinito
+                        if (isHealthConnectedStateSaved(applicationContext)) {
+                            savePendingWatchSession(applicationContext, durationSec, startInstant, endInstant)
+                        }
                     }
                 }
 
