@@ -33,6 +33,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -1061,11 +1063,11 @@ fun MeditationTimerScreen(
                 }
             }
 
-            // --- CONTROLLI E IMPOSTAZIONI TEMPO (ALTEZZA FISSA PER EVITARE GRADINI) ---
+            // --- CONTROLLI E IMPOSTAZIONI TEMPO (ALTEZZA ADATTIVA) ---
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
+                    .heightIn(min = 190.dp)
                     .padding(bottom = 12.dp),
                 contentAlignment = Alignment.BottomCenter
             ) {
@@ -1102,25 +1104,34 @@ fun MeditationTimerScreen(
 
                             if (selectedTimeInSeconds != -1) {
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth(0.92f),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     OutlinedButton(
                                         onClick = { if (selectedTimeInSeconds > 300) updateTimeSelection(selectedTimeInSeconds - 300) },
-                                        enabled = selectedTimeInSeconds > 300
+                                        enabled = selectedTimeInSeconds > 300,
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
                                     ) { Text("-5m") }
 
                                     OutlinedButton(
                                         onClick = { if (selectedTimeInSeconds > 60) updateTimeSelection(selectedTimeInSeconds - 60) },
-                                        enabled = selectedTimeInSeconds > 60
+                                        enabled = selectedTimeInSeconds > 60,
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
                                     ) { Text("-1m") }
 
                                     OutlinedButton(
-                                        onClick = { updateTimeSelection(selectedTimeInSeconds + 60) }
+                                        onClick = { updateTimeSelection(selectedTimeInSeconds + 60) },
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
                                     ) { Text("+1m") }
 
                                     OutlinedButton(
-                                        onClick = { updateTimeSelection(selectedTimeInSeconds + 300) }
+                                        onClick = { updateTimeSelection(selectedTimeInSeconds + 300) },
+                                        modifier = Modifier.weight(1f),
+                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
                                     ) { Text("+5m") }
                                 }
                             }
@@ -1151,19 +1162,22 @@ fun MeditationTimerScreen(
                             }
 
                             Row(
+                                modifier = Modifier.fillMaxWidth(0.85f),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 OutlinedButton(
                                     onClick = { resetTimerState() },
-                                    shape = RoundedCornerShape(20.dp)
+                                    shape = RoundedCornerShape(20.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
                                     Text(stringResource(R.string.button_reset))
                                 }
 
                                 OutlinedButton(
                                     onClick = { saveAndFinishSession(includeExtra = false) },
-                                    shape = RoundedCornerShape(20.dp)
+                                    shape = RoundedCornerShape(20.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
                                     Text(stringResource(R.string.button_save_planned, (selectedTimeInSeconds / 60)))
                                 }
@@ -1184,8 +1198,8 @@ fun MeditationTimerScreen(
                             enabled = canStart,
                             shape = RoundedCornerShape(28.dp),
                             modifier = Modifier
-                                .height(56.dp)
-                                .width(220.dp),
+                                .height(54.dp)
+                                .fillMaxWidth(0.82f),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isTimerRunning) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
                             )
@@ -1205,12 +1219,14 @@ fun MeditationTimerScreen(
                         if (!isInitialState && !isTimerRunning) {
                             Spacer(modifier = Modifier.height(16.dp))
                             Row(
+                                modifier = Modifier.fillMaxWidth(0.85f),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 OutlinedButton(
                                     onClick = { resetTimerState() },
-                                    shape = RoundedCornerShape(20.dp)
+                                    shape = RoundedCornerShape(20.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
                                     Text(stringResource(R.string.button_reset))
                                 }
@@ -1219,7 +1235,8 @@ fun MeditationTimerScreen(
                                     onClick = { 
                                         saveAndFinishSession(includeExtra = false)
                                     },
-                                    shape = RoundedCornerShape(20.dp)
+                                    shape = RoundedCornerShape(20.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
                                     Text(stringResource(R.string.button_save_and_reset))
                                 }
@@ -1386,20 +1403,48 @@ fun MeditationTimerScreen(
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    listOf(20, 40, 60, 80, 100).forEach { vol ->
-                                        FilterChip(
-                                            selected = gongVolumePercent == vol,
-                                            onClick = {
-                                                gongVolumePercent = vol
-                                                saveGongVolume(context, vol)
-                                                playPreviewGong(gongFreqHz, vol)
-                                            },
-                                            enabled = isSoundEnabled,
-                                            label = { Text("$vol%", fontSize = 11.sp) }
-                                        )
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (gongVolumePercent > 20) {
+                                                val newVol = (gongVolumePercent - 10).coerceAtLeast(20)
+                                                gongVolumePercent = newVol
+                                                saveGongVolume(context, newVol)
+                                                playPreviewGong(gongFreqHz, newVol)
+                                            }
+                                        },
+                                        enabled = isSoundEnabled && gongVolumePercent > 20,
+                                        modifier = Modifier.size(width = 48.dp, height = 36.dp),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("−", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Text(
+                                        text = "$gongVolumePercent%",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSoundEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.padding(horizontal = 24.dp)
+                                    )
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            if (gongVolumePercent < 100) {
+                                                val newVol = (gongVolumePercent + 10).coerceAtMost(100)
+                                                gongVolumePercent = newVol
+                                                saveGongVolume(context, newVol)
+                                                playPreviewGong(gongFreqHz, newVol)
+                                            }
+                                        },
+                                        enabled = isSoundEnabled && gongVolumePercent < 100,
+                                        modifier = Modifier.size(width = 48.dp, height = 36.dp),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
 
@@ -1413,9 +1458,10 @@ fun MeditationTimerScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     listOf(
                                         ALERT_MODE_BOTH to stringResource(R.string.alert_mode_both),
@@ -1449,9 +1495,10 @@ fun MeditationTimerScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     FilterChip(
                                         selected = timerStyle == 1,
