@@ -37,6 +37,7 @@
         android:theme="@style/Theme.Still">
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density"
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTask"

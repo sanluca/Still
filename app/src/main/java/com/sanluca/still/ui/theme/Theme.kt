@@ -1,8 +1,13 @@
 package com.sanluca.still.ui.theme
 
+import android.os.Build
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.platform.LocalContext
 
 val DarkWarmColorScheme = darkColorScheme(
     primary = WarmPeachPrimary, // #E08E45
@@ -27,15 +32,54 @@ val DarkWarmColorScheme = darkColorScheme(
     outlineVariant = DarkWarmOutline, // #4A3024
 )
 
+val LocalStillColors = staticCompositionLocalOf { AutumnExtendedColors }
+
 @Composable
 fun StillTheme(
-    darkTheme: Boolean = true,
-    dynamicColor: Boolean = false,
-    content: @Composable () -> Unit
+    palette: StillColorPalette = StillColorPalette.AUTUMN,
+    customTheme: CustomThemeConfig = CustomThemeConfig(),
+    content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = DarkWarmColorScheme,
-        typography = Typography,
-        content = content
-    )
+    val context = LocalContext.current
+    val colorScheme = when (palette) {
+        StillColorPalette.AUTUMN -> DarkWarmColorScheme
+        StillColorPalette.TITANIUM -> TitaniumColorScheme
+        StillColorPalette.DEEP_SPACE -> DeepSpaceColorScheme
+        StillColorPalette.NOTHING -> NothingColorScheme
+        StillColorPalette.CHAMPAGNE -> ChampagneColorScheme
+        StillColorPalette.SAGE -> SageColorScheme
+        StillColorPalette.CUSTOM -> buildCustomColorScheme(customTheme)
+        StillColorPalette.DYNAMIC -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                dynamicDarkColorScheme(context)
+            } else {
+                DarkWarmColorScheme
+            }
+        }
+    }
+
+    val extendedColors = when (palette) {
+        StillColorPalette.AUTUMN -> AutumnExtendedColors
+        StillColorPalette.TITANIUM -> TitaniumExtendedColors
+        StillColorPalette.DEEP_SPACE -> DeepSpaceExtendedColors
+        StillColorPalette.NOTHING -> NothingExtendedColors
+        StillColorPalette.CHAMPAGNE -> ChampagneExtendedColors
+        StillColorPalette.SAGE -> SageExtendedColors
+        StillColorPalette.CUSTOM -> buildCustomExtendedColors(customTheme)
+        StillColorPalette.DYNAMIC -> StillExtendedColors(
+            overtime = OvertimeGold,
+            sandLight = colorScheme.primary,
+            sandDeep = colorScheme.tertiary,
+            woodFrame = colorScheme.outlineVariant,
+            glassOutline = colorScheme.onSurfaceVariant
+        )
+    }
+
+    CompositionLocalProvider(LocalStillColors provides extendedColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

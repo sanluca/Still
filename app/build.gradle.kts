@@ -72,6 +72,10 @@ dependencies {
     // Play Services Wearable per comunicazione con Pixel Watch
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
 
+    // Google Play In-App Updates
+    implementation(libs.play.app.update)
+    implementation(libs.play.app.update.ktx)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

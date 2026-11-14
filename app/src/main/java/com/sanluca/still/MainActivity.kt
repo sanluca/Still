@@ -12,7 +12,10 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
@@ -49,8 +52,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -58,6 +63,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -65,9 +72,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -79,6 +93,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -89,6 +104,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -105,11 +121,16 @@ import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.sanluca.still.ui.theme.AutumnGlassOutline
-import com.sanluca.still.ui.theme.AutumnSandDeep
-import com.sanluca.still.ui.theme.AutumnSandLight
-import com.sanluca.still.ui.theme.AutumnWoodFrame
-import com.sanluca.still.ui.theme.OvertimeGold
+import com.google.android.play.core.appupdate.AppUpdateManager
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.appupdate.AppUpdateOptions
+import com.google.android.play.core.install.InstallStateUpdatedListener
+import com.google.android.play.core.install.model.AppUpdateType
+import com.google.android.play.core.install.model.InstallStatus
+import com.google.android.play.core.install.model.UpdateAvailability
+import com.sanluca.still.ui.theme.CustomThemeConfig
+import com.sanluca.still.ui.theme.LocalStillColors
+import com.sanluca.still.ui.theme.StillColorPalette
 import com.sanluca.still.ui.theme.StillTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -125,20 +146,86 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val showHealthRationaleState = mutableStateOf(false)
+    private val isUpdateDownloadedState = mutableStateOf(false)
+    private lateinit var appUpdateManager: AppUpdateManager
+    private var hasCheckedUpdate = false
+
+    private val installStateUpdatedListener = InstallStateUpdatedListener { state ->
+        if (state.installStatus() == InstallStatus.DOWNLOADED) {
+            isUpdateDownloadedState.value = true
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         showHealthRationaleState.value = checkIsHealthRationale(intent)
-        enableEdgeToEdge()
+        appUpdateManager = AppUpdateManagerFactory.create(this)
+        appUpdateManager.registerListener(installStateUpdatedListener)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
         setContent {
-            StillTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+            var selectedPalette by remember { mutableStateOf(getSavedColorPalette(this)) }
+            var customTheme by remember { mutableStateOf(getSavedCustomThemeConfig(this)) }
+            val snackbarHostState = remember { SnackbarHostState() }
+            val updateReadyMsg = stringResource(R.string.update_ready_message)
+            val updateReadyAction = stringResource(R.string.update_ready_action)
+            val updateLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.StartIntentSenderForResult()
+            ) { _ ->
+                // Se l'utente rifiuta o annulla, non riproponiamo nello stesso avvio
+            }
+
+            LaunchedEffect(Unit) {
+                checkForPlayStoreUpdate(updateLauncher)
+            }
+
+            LaunchedEffect(isUpdateDownloadedState.value) {
+                if (isUpdateDownloadedState.value) {
+                    val result = snackbarHostState.showSnackbar(
+                        message = updateReadyMsg,
+                        actionLabel = updateReadyAction,
+                        duration = SnackbarDuration.Indefinite
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        appUpdateManager.completeUpdate()
+                    } else {
+                        isUpdateDownloadedState.value = false
+                    }
+                }
+            }
+
+            StillTheme(palette = selectedPalette, customTheme = customTheme) {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+                ) { innerPadding ->
                     MeditationTimerScreen(
                         modifier = Modifier.padding(innerPadding),
+                        selectedPalette = selectedPalette,
+                        onPaletteSelected = { newPalette ->
+                            selectedPalette = newPalette
+                            saveColorPalette(this, newPalette)
+                        },
+                        customTheme = customTheme,
+                        onCustomThemeChanged = { newConfig ->
+                            customTheme = newConfig
+                            saveCustomThemeConfig(this, newConfig)
+                        },
                         showHealthRationale = showHealthRationaleState.value,
                         onDismissHealthRationale = { showHealthRationaleState.value = false }
                     )
                 }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        appUpdateManager.appUpdateInfo.addOnSuccessListener { appUpdateInfo ->
+            if (appUpdateInfo.installStatus() == InstallStatus.DOWNLOADED) {
+                isUpdateDownloadedState.value = true
             }
         }
     }
@@ -152,11 +239,32 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        if (::appUpdateManager.isInitialized) {
+            appUpdateManager.unregisterListener(installStateUpdatedListener)
+        }
         // Se l'Activity viene chiusa davvero (back, swipe dai recenti) non lasciamo un timer orfano
         if (isFinishing && StillTimerService.isRunning) {
             stopService(Intent(this, StillTimerService::class.java))
         }
         super.onDestroy()
+    }
+
+    private fun checkForPlayStoreUpdate(updateLauncher: ActivityResultLauncher<IntentSenderRequest>) {
+        if (hasCheckedUpdate || StillTimerService.isRunning) return
+        hasCheckedUpdate = true
+
+        appUpdateManager.appUpdateInfo.addOnSuccessListener { appUpdateInfo ->
+            if (appUpdateInfo.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE &&
+                appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE) &&
+                !StillTimerService.isRunning
+            ) {
+                appUpdateManager.startUpdateFlowForResult(
+                    appUpdateInfo,
+                    updateLauncher,
+                    AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build()
+                )
+            }
+        }
     }
 
     private fun checkIsHealthRationale(intent: Intent?): Boolean {
@@ -179,6 +287,10 @@ private const val KEY_ALERT_MODE = "alert_mode"
 private const val KEY_INTERVAL_MINS = "interval_gong_mins"
 private const val KEY_AUTO_DND = "auto_dnd_enabled"
 private const val KEY_TIMER_STYLE = "timer_visual_style" // 0 = Cerchio, 1 = Clessidra
+private const val KEY_COLOR_PALETTE = "color_palette"
+private const val KEY_CUSTOM_HUE = "custom_theme_hue"
+private const val KEY_CUSTOM_SAT = "custom_theme_sat"
+private const val KEY_CUSTOM_BG_MODE = "custom_theme_bg_mode"
 private const val KEY_HEALTH_CONNECTED = "health_connected"
 private const val KEY_SESSION_HISTORY = "session_history_list"
 private const val KEY_PENDING_HEALTH_SESSIONS = "pending_health_sessions"
@@ -267,6 +379,34 @@ fun saveTimerStyle(context: Context, style: Int) {
 fun getSavedTimerStyle(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_TIMER_STYLE, 1)
+}
+
+fun saveColorPalette(context: Context, palette: StillColorPalette) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putString(KEY_COLOR_PALETTE, palette.id).apply()
+}
+
+fun getSavedColorPalette(context: Context): StillColorPalette {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return StillColorPalette.fromId(prefs.getString(KEY_COLOR_PALETTE, StillColorPalette.AUTUMN.id))
+}
+
+fun saveCustomThemeConfig(context: Context, config: CustomThemeConfig) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit()
+        .putFloat(KEY_CUSTOM_HUE, config.hue.coerceIn(0f, 360f))
+        .putFloat(KEY_CUSTOM_SAT, config.saturation.coerceIn(0.15f, 0.90f))
+        .putInt(KEY_CUSTOM_BG_MODE, config.bgMode.coerceIn(0, 2))
+        .apply()
+}
+
+fun getSavedCustomThemeConfig(context: Context): CustomThemeConfig {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return CustomThemeConfig(
+        hue = prefs.getFloat(KEY_CUSTOM_HUE, 205f).coerceIn(0f, 360f),
+        saturation = prefs.getFloat(KEY_CUSTOM_SAT, 0.55f).coerceIn(0.15f, 0.90f),
+        bgMode = prefs.getInt(KEY_CUSTOM_BG_MODE, 1).coerceIn(0, 2)
+    )
 }
 
 fun savePrepTime(context: Context, prepSeconds: Int) {
@@ -492,6 +632,10 @@ fun requestDndAccess(context: Context) {
 @Composable
 fun MeditationTimerScreen(
     modifier: Modifier = Modifier,
+    selectedPalette: StillColorPalette = StillColorPalette.AUTUMN,
+    onPaletteSelected: (StillColorPalette) -> Unit = {},
+    customTheme: CustomThemeConfig = CustomThemeConfig(),
+    onCustomThemeChanged: (CustomThemeConfig) -> Unit = {},
     showHealthRationale: Boolean = false,
     onDismissHealthRationale: () -> Unit = {}
 ) {
@@ -602,6 +746,11 @@ fun MeditationTimerScreen(
     }
 
     var selectedTimeInSeconds by remember { mutableStateOf(getSavedSelectedTime(context)) }
+    var activeSessionPlannedSeconds by remember { mutableStateOf(selectedTimeInSeconds) }
+    var liveAdjustmentSeconds by remember { mutableStateOf(0) }
+    var lastTimedSeconds by remember {
+        mutableStateOf(if (selectedTimeInSeconds > 0) selectedTimeInSeconds else 600)
+    }
     
     var prepTimeSeconds by remember { mutableStateOf(getSavedPrepTime(context)) }
     var gongFreqHz by remember { mutableStateOf(getSavedGongFrequency(context)) }
@@ -627,7 +776,12 @@ fun MeditationTimerScreen(
     var sessionStartTime by remember { mutableStateOf<Instant?>(null) }
 
     fun updateTimeSelection(newTime: Int) {
+        if (newTime > 0) {
+            lastTimedSeconds = newTime
+        }
         selectedTimeInSeconds = newTime
+        activeSessionPlannedSeconds = newTime
+        liveAdjustmentSeconds = 0
         timeLeftInSeconds = if (newTime == -1) 0 else newTime
         isOvertime = false
         overtimeSeconds = 0
@@ -635,15 +789,34 @@ fun MeditationTimerScreen(
         saveSelectedTime(context, newTime)
     }
 
-    val progress = remember(timeLeftInSeconds, selectedTimeInSeconds) {
-        if (selectedTimeInSeconds > 0) {
-            timeLeftInSeconds.toFloat() / selectedTimeInSeconds.toFloat()
+    fun adjustActiveTimer(deltaSeconds: Int) {
+        if (activeSessionPlannedSeconds <= 0 || isOvertime || isPreparing) return
+        if (deltaSeconds < 0 && timeLeftInSeconds <= -deltaSeconds) return
+
+        activeSessionPlannedSeconds = (activeSessionPlannedSeconds + deltaSeconds).coerceAtLeast(1)
+        timeLeftInSeconds = (timeLeftInSeconds + deltaSeconds).coerceAtLeast(1)
+
+        if (isTimerRunning) {
+            liveAdjustmentSeconds += deltaSeconds
+            if (StillTimerService.isRunning) {
+                val adjustIntent = Intent(context, StillTimerService::class.java).apply {
+                    action = "ADJUST_TIME"
+                    putExtra("DELTA_SECONDS", deltaSeconds)
+                }
+                context.startService(adjustIntent)
+            }
+        }
+    }
+
+    val progress = remember(timeLeftInSeconds, activeSessionPlannedSeconds) {
+        if (activeSessionPlannedSeconds > 0) {
+            (timeLeftInSeconds.toFloat() / activeSessionPlannedSeconds.toFloat()).coerceIn(0f, 1f)
         } else {
             1f
         }
     }
 
-    val overtimeColor = OvertimeGold
+    val overtimeColor = LocalStillColors.current.overtime
 
     LaunchedEffect(isTimerRunning) {
         if (isTimerRunning) {
@@ -655,6 +828,7 @@ fun MeditationTimerScreen(
                     
                     while (prepTimeLeftSeconds > 0 && isTimerRunning) {
                         delay(1000L)
+                        if (!isTimerRunning) break
                         prepTimeLeftSeconds -= 1
                     }
                     isPreparing = false
@@ -665,6 +839,7 @@ fun MeditationTimerScreen(
                 // --- 2. INIZIO EFFETTIVO MEDITAZIONE ---
                 if (sessionStartTime == null) {
                     sessionStartTime = Instant.now()
+                    activeSessionPlannedSeconds = selectedTimeInSeconds
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -678,16 +853,16 @@ fun MeditationTimerScreen(
                         putExtra("VOLUME", gongVolumePercent)
                         putExtra("ALERT_MODE", alertMode)
                         putExtra("INTERVAL", intervalMins)
-                        putExtra("TIME", selectedTimeInSeconds)
+                        putExtra("TIME", activeSessionPlannedSeconds)
                         putExtra("DND", autoDndEnabled)
                     }
                     context.startForegroundService(serviceIntent)
                 } else {
                     // Ripresa dopo pausa (alla pausa il service è stato fermato): riparte dal tempo rimanente
-                    val elapsedBeforePause = if (selectedTimeInSeconds == -1) {
+                    val elapsedBeforePause = if (activeSessionPlannedSeconds == -1) {
                         timeLeftInSeconds
                     } else {
-                        (selectedTimeInSeconds - timeLeftInSeconds).coerceAtLeast(0)
+                        (activeSessionPlannedSeconds - timeLeftInSeconds).coerceAtLeast(0)
                     }
                     val resumeIntent = Intent(context, StillTimerService::class.java).apply {
                         action = "START"
@@ -697,24 +872,26 @@ fun MeditationTimerScreen(
                         putExtra("VOLUME", gongVolumePercent)
                         putExtra("ALERT_MODE", alertMode)
                         putExtra("INTERVAL", intervalMins)
-                        putExtra("TIME", if (selectedTimeInSeconds == -1) -1 else timeLeftInSeconds)
+                        putExtra("TIME", if (activeSessionPlannedSeconds == -1) -1 else timeLeftInSeconds)
                         putExtra("DND", autoDndEnabled)
                     }
                     context.startForegroundService(resumeIntent)
                 }
 
+                liveAdjustmentSeconds = 0
                 val initialSeconds = timeLeftInSeconds
                 val startRealtime = SystemClock.elapsedRealtime()
 
                 while (isTimerRunning) {
                     delay(500L)
+                    if (!isTimerRunning) break
                     
                     val elapsedSeconds = ((SystemClock.elapsedRealtime() - startRealtime) / 1000L).toInt()
 
-                    if (selectedTimeInSeconds == -1) {
+                    if (activeSessionPlannedSeconds == -1) {
                         timeLeftInSeconds = initialSeconds + elapsedSeconds
                     } else if (!isOvertime) {
-                        val remaining = initialSeconds - elapsedSeconds
+                        val remaining = (initialSeconds + liveAdjustmentSeconds) - elapsedSeconds
                         if (remaining > 0) {
                             timeLeftInSeconds = remaining
                         } else {
@@ -723,7 +900,7 @@ fun MeditationTimerScreen(
                             overtimeSeconds = 0
                         }
                     } else {
-                        val overtimeStartRealtime = startRealtime + (initialSeconds * 1000L)
+                        val overtimeStartRealtime = startRealtime + ((initialSeconds + liveAdjustmentSeconds) * 1000L)
                         val extraSec = ((SystemClock.elapsedRealtime() - overtimeStartRealtime) / 1000L).toInt()
                         overtimeSeconds = extraSec.coerceAtLeast(0)
                     }
@@ -733,6 +910,7 @@ fun MeditationTimerScreen(
             }
         } else {
             isPreparing = false
+            liveAdjustmentSeconds = 0
             if (StillTimerService.isRunning) {
                 val stopIntent = Intent(context, StillTimerService::class.java).apply {
                     action = "STOP"
@@ -743,11 +921,12 @@ fun MeditationTimerScreen(
     }
 
     LaunchedEffect(selectedTimeInSeconds) {
-        if (!isTimerRunning) {
+        if (!isTimerRunning && sessionStartTime == null && !isOvertime) {
+            activeSessionPlannedSeconds = selectedTimeInSeconds
+            liveAdjustmentSeconds = 0
             timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
             isOvertime = false
             overtimeSeconds = 0
-            sessionStartTime = null
         }
     }
 
@@ -766,6 +945,8 @@ fun MeditationTimerScreen(
         isOvertime = false
         overtimeSeconds = 0
         hideTimerNumbers = false
+        activeSessionPlannedSeconds = selectedTimeInSeconds
+        liveAdjustmentSeconds = 0
         timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
         sessionStartTime = null
     }
@@ -774,8 +955,8 @@ fun MeditationTimerScreen(
     val toastHealthDenied = stringResource(R.string.toast_health_permission_denied)
 
     fun saveAndFinishSession(includeExtra: Boolean) {
-        val plannedSec = if (selectedTimeInSeconds > 0) {
-            if (isOvertime) selectedTimeInSeconds else (selectedTimeInSeconds - timeLeftInSeconds)
+        val plannedSec = if (activeSessionPlannedSeconds > 0) {
+            if (isOvertime) activeSessionPlannedSeconds else (activeSessionPlannedSeconds - timeLeftInSeconds).coerceAtLeast(0)
         } else {
             timeLeftInSeconds
         }
@@ -805,11 +986,16 @@ fun MeditationTimerScreen(
         resetTimerState()
     }
 
+    val isCompactHeight = LocalConfiguration.current.screenHeightDp < 640
+    val circleSize = if (isCompactHeight) 180.dp else 250.dp
+    val hourglassWidth = if (isCompactHeight) 130.dp else 185.dp
+    val hourglassHeight = if (isCompactHeight) 168.dp else 240.dp
+
     Box(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .padding(horizontal = 24.dp, vertical = if (isCompactHeight) 10.dp else 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
@@ -842,12 +1028,12 @@ fun MeditationTimerScreen(
                 Row(
                     modifier = Modifier
                         .background(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
                             shape = RoundedCornerShape(24.dp)
                         )
                         .border(
                             width = 1.dp,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
                             shape = RoundedCornerShape(24.dp)
                         )
                         .padding(horizontal = 6.dp, vertical = 2.dp),
@@ -894,12 +1080,61 @@ fun MeditationTimerScreen(
             }
 
             // --- AREA CENTRALE FISSA (NON SALTA MAI QUANDO PARTE IL TIMER) ---
+            val initialLabelText = if (!isInitialState && !isPreparing && selectedTimeInSeconds > 0) {
+                if (activeSessionPlannedSeconds != selectedTimeInSeconds && activeSessionPlannedSeconds > 0) {
+                    stringResource(
+                        R.string.timer_initial_adjusted_format,
+                        formatTime(selectedTimeInSeconds),
+                        formatTime(activeSessionPlannedSeconds)
+                    )
+                } else {
+                    stringResource(R.string.timer_initial_format, formatTime(selectedTimeInSeconds))
+                }
+            } else {
+                null
+            }
+
+            val ambientGlowAlpha = if (isTimerRunning && !isPreparing) {
+                val glowTransition = rememberInfiniteTransition(label = "ambient_glow")
+                val animatedAlpha by glowTransition.animateFloat(
+                    initialValue = 0.07f,
+                    targetValue = 0.16f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(durationMillis = 3800, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "ambient_glow_alpha"
+                )
+                animatedAlpha
+            } else {
+                0.08f
+            }
+            val ambientGlowColor = if (isOvertime) overtimeColor else MaterialTheme.colorScheme.primary
+
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val glowRadius = size.minDimension * 0.62f
+                    if (glowRadius > 0f) {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    ambientGlowColor.copy(alpha = ambientGlowAlpha),
+                                    ambientGlowColor.copy(alpha = ambientGlowAlpha * 0.35f),
+                                    Color.Transparent
+                                ),
+                                center = center,
+                                radius = glowRadius
+                            ),
+                            radius = glowRadius,
+                            center = center
+                        )
+                    }
+                }
                 if (timerStyle == 1) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -926,10 +1161,10 @@ fun MeditationTimerScreen(
                             isFlowing = isSandFlowing,
                             isOvertime = isOvertime,
                             isPreparing = isPreparing,
-                            modifier = Modifier.size(width = 185.dp, height = 240.dp)
+                            modifier = Modifier.size(width = hourglassWidth, height = hourglassHeight)
                         )
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(if (isCompactHeight) 4.dp else 10.dp))
 
                         if (isPreparing) {
                             Text(
@@ -938,36 +1173,64 @@ fun MeditationTimerScreen(
                                 color = MaterialTheme.colorScheme.tertiary
                             )
                         } else if (isOvertime) {
-                            Text(
-                                text = "+${formatTime(overtimeSeconds)}",
-                                maxLines = 1,
-                                softWrap = false,
-                                modifier = Modifier.alpha(if (hideTimerNumbers) 0f else 1f),
-                                style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
-                                color = overtimeColor
-                            )
-                        } else {
-                            Text(
-                                text = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) {
-                                    "∞"
-                                } else {
-                                    formatTime(timeLeftInSeconds)
-                                },
-                                maxLines = 1,
-                                softWrap = false,
-                                modifier = Modifier.alpha(if (hideTimerNumbers && isTimerRunning) 0f else 1f),
-                                style = MaterialTheme.typography.displayMedium.copy(
-                                    fontWeight = FontWeight.Normal,
-                                    color = MaterialTheme.colorScheme.onBackground
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.alpha(if (hideTimerNumbers) 0f else 1f)
+                            ) {
+                                Text(
+                                    text = "+${formatTime(overtimeSeconds)}",
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = overtimeColor
                                 )
-                            )
+                                if (initialLabelText != null) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = initialLabelText,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                                    )
+                                }
+                            }
+                        } else {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.alpha(if (hideTimerNumbers && isTimerRunning) 0f else 1f)
+                            ) {
+                                Text(
+                                    text = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) {
+                                        "∞"
+                                    } else {
+                                        formatTime(timeLeftInSeconds)
+                                    },
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    style = MaterialTheme.typography.displayMedium.copy(
+                                        fontWeight = FontWeight.Normal,
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                )
+                                if (initialLabelText != null) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = initialLabelText,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 14.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                                    )
+                                }
+                            }
                         }
                     }
                 } else {
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(250.dp)
+                            .size(circleSize)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
@@ -980,7 +1243,7 @@ fun MeditationTimerScreen(
                         if (isOvertime) {
                             CircularProgressIndicator(
                                 progress = { 1f },
-                                modifier = Modifier.size(250.dp),
+                                modifier = Modifier.size(circleSize),
                                 color = overtimeColor,
                                 strokeWidth = 6.dp,
                                 strokeCap = StrokeCap.Round
@@ -989,14 +1252,14 @@ fun MeditationTimerScreen(
 
                         if (isPreparing) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(250.dp),
+                                modifier = Modifier.size(circleSize),
                                 color = MaterialTheme.colorScheme.tertiary,
                                 strokeWidth = 6.dp
                             )
                         } else if (selectedTimeInSeconds != -1) {
                             CircularProgressIndicator(
                                 progress = { progress },
-                                modifier = Modifier.size(250.dp),
+                                modifier = Modifier.size(circleSize),
                                 color = MaterialTheme.colorScheme.primary,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
                                 strokeWidth = 8.dp,
@@ -1005,7 +1268,7 @@ fun MeditationTimerScreen(
                         } else {
                             CircularProgressIndicator(
                                 progress = { 1f },
-                                modifier = Modifier.size(250.dp),
+                                modifier = Modifier.size(circleSize),
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
                                 strokeWidth = 4.dp
                             )
@@ -1044,38 +1307,63 @@ fun MeditationTimerScreen(
                                     ),
                                     color = overtimeColor
                                 )
+                                if (initialLabelText != null) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = initialLabelText,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                                    )
+                                }
                             }
                         } else {
-                            Text(
-                                text = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) {
-                                    "∞"
-                                } else {
-                                    formatTime(timeLeftInSeconds)
-                                },
-                                maxLines = 1,
-                                softWrap = false,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.alpha(if (hideTimerNumbers && isTimerRunning) 0f else 1f),
-                                style = MaterialTheme.typography.displayLarge.copy(
-                                    fontSize = when {
-                                        selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> 80.sp
-                                        timeLeftInSeconds >= 6000 -> 42.sp
-                                        else -> 48.sp
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.alpha(if (hideTimerNumbers && isTimerRunning) 0f else 1f)
+                            ) {
+                                Text(
+                                    text = if (selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0) {
+                                        "∞"
+                                    } else {
+                                        formatTime(timeLeftInSeconds)
                                     },
-                                    fontWeight = FontWeight.Normal,
-                                    platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    textAlign = TextAlign.Center,
+                                    style = MaterialTheme.typography.displayLarge.copy(
+                                        fontSize = when {
+                                            selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> 80.sp
+                                            timeLeftInSeconds >= 6000 -> 42.sp
+                                            else -> 48.sp
+                                        },
+                                        fontWeight = FontWeight.Normal,
+                                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                    )
                                 )
-                            )
+                                if (initialLabelText != null) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = initialLabelText,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
 
             // --- CONTROLLI E IMPOSTAZIONI TEMPO (ALTEZZA ADATTIVA) ---
+            val canShowTimeRow = isInitialState || (activeSessionPlannedSeconds > 0 && !isOvertime && !isPreparing)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 190.dp)
+                    .heightIn(min = if (isCompactHeight) 96.dp else 130.dp)
                     .padding(bottom = 12.dp),
                 contentAlignment = Alignment.BottomCenter
             ) {
@@ -1083,76 +1371,161 @@ fun MeditationTimerScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     AnimatedVisibility(
-                        visible = isInitialState,
+                        visible = canShowTimeRow,
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            val isInfinity = isInitialState && selectedTimeInSeconds == -1
+                            val currentBasisSeconds = if (isInitialState) selectedTimeInSeconds else timeLeftInSeconds
+                            val stepAutoSize = TextAutoSize.StepBased(
+                                minFontSize = 7.sp,
+                                maxFontSize = 14.sp,
+                                stepSize = 0.5.sp
+                            )
+                            val infinityAutoSize = TextAutoSize.StepBased(
+                                minFontSize = 8.sp,
+                                maxFontSize = 18.sp,
+                                stepSize = 0.5.sp
+                            )
+
                             Row(
-                                modifier = Modifier.fillMaxWidth(0.95f),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(IntrinsicSize.Min),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                val presets = listOf(5, 10, 15, 20)
-                                presets.forEach { min ->
-                                    val seconds = min * 60
-                                    FilterChip(
-                                        selected = selectedTimeInSeconds == seconds,
-                                        onClick = { updateTimeSelection(seconds) },
-                                        label = { Text("${min}m", maxLines = 1, softWrap = false) }
+                                OutlinedButton(
+                                    onClick = {
+                                        if (isInitialState) {
+                                            if (selectedTimeInSeconds > 300) updateTimeSelection(selectedTimeInSeconds - 300)
+                                        } else {
+                                            adjustActiveTimer(-300)
+                                        }
+                                    },
+                                    enabled = currentBasisSeconds > 300,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "-5m",
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        autoSize = stepAutoSize
                                     )
                                 }
-                                FilterChip(
-                                    selected = selectedTimeInSeconds == -1,
-                                    onClick = { updateTimeSelection(-1) },
-                                    label = {
-                                        Text(
-                                            text = "∞",
-                                            maxLines = 1,
-                                            softWrap = false,
-                                            style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
-                                        )
-                                    }
-                                )
-                            }
 
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            if (selectedTimeInSeconds != -1) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(0.92f),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                OutlinedButton(
+                                    onClick = {
+                                        if (isInitialState) {
+                                            if (selectedTimeInSeconds > 60) updateTimeSelection(selectedTimeInSeconds - 60)
+                                        } else {
+                                            adjustActiveTimer(-60)
+                                        }
+                                    },
+                                    enabled = currentBasisSeconds > 60,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
                                 ) {
-                                    OutlinedButton(
-                                        onClick = { if (selectedTimeInSeconds > 300) updateTimeSelection(selectedTimeInSeconds - 300) },
-                                        enabled = selectedTimeInSeconds > 300,
-                                        modifier = Modifier.weight(1f),
-                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
-                                    ) { Text("-5m", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) }
+                                    Text(
+                                        text = "-1m",
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        autoSize = stepAutoSize
+                                    )
+                                }
 
-                                    OutlinedButton(
-                                        onClick = { if (selectedTimeInSeconds > 60) updateTimeSelection(selectedTimeInSeconds - 60) },
-                                        enabled = selectedTimeInSeconds > 60,
-                                        modifier = Modifier.weight(1f),
-                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
-                                    ) { Text("-1m", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) }
+                                val onInfinityClick = {
+                                    if (isInfinity) {
+                                        updateTimeSelection(lastTimedSeconds)
+                                    } else {
+                                        updateTimeSelection(-1)
+                                    }
+                                }
+                                val infinityLabel: @Composable () -> Unit = {
+                                    Text(
+                                        text = "∞",
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        autoSize = infinityAutoSize,
+                                        style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
+                                    )
+                                }
 
-                                    OutlinedButton(
-                                        onClick = { updateTimeSelection(selectedTimeInSeconds + 60) },
-                                        modifier = Modifier.weight(1f),
+                                if (isInfinity) {
+                                    Button(
+                                        onClick = onInfinityClick,
+                                        enabled = isInitialState,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight(),
                                         contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
-                                    ) { Text("+1m", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) }
+                                    ) { infinityLabel() }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = onInfinityClick,
+                                        enabled = isInitialState,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight(),
+                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
+                                    ) { infinityLabel() }
+                                }
 
-                                    OutlinedButton(
-                                        onClick = { updateTimeSelection(selectedTimeInSeconds + 300) },
-                                        modifier = Modifier.weight(1f),
-                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
-                                    ) { Text("+5m", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) }
+                                OutlinedButton(
+                                    onClick = {
+                                        if (isInitialState) {
+                                            updateTimeSelection(if (isInfinity) 60 else selectedTimeInSeconds + 60)
+                                        } else {
+                                            adjustActiveTimer(60)
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "+1m",
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        autoSize = stepAutoSize
+                                    )
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        if (isInitialState) {
+                                            updateTimeSelection(if (isInfinity) 300 else selectedTimeInSeconds + 300)
+                                        } else {
+                                            adjustActiveTimer(300)
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = "+5m",
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        autoSize = stepAutoSize
+                                    )
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(24.dp))
+                            Spacer(modifier = Modifier.height(if (isInitialState) 24.dp else 14.dp))
                         }
                     }
 
@@ -1212,7 +1585,7 @@ fun MeditationTimerScreen(
                                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                                 ) {
                                     Text(
-                                        text = stringResource(R.string.button_save_planned, (selectedTimeInSeconds / 60)),
+                                        text = stringResource(R.string.button_save_planned),
                                         maxLines = 1,
                                         softWrap = false,
                                         overflow = TextOverflow.Ellipsis
@@ -1575,6 +1948,210 @@ fun MeditationTimerScreen(
                                         },
                                         label = { Text(stringResource(R.string.settings_timer_style_circle)) }
                                     )
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    text = stringResource(R.string.settings_color_theme),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                val availablePalettes = remember {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                        StillColorPalette.entries
+                                    } else {
+                                        StillColorPalette.entries.filter { it != StillColorPalette.DYNAMIC }
+                                    }
+                                }
+                                fun paletteSwatch(palette: StillColorPalette): Color = when {
+                                    palette == StillColorPalette.CUSTOM -> Color.hsl(
+                                        customTheme.hue.coerceIn(0f, 360f),
+                                        customTheme.saturation.coerceIn(0.15f, 0.90f),
+                                        0.76f
+                                    )
+                                    palette == StillColorPalette.DYNAMIC && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                                        dynamicDarkColorScheme(context).primary
+                                    else -> palette.swatchColor
+                                }
+
+                                var themeMenuExpanded by remember { mutableStateOf(false) }
+                                Box(modifier = Modifier.fillMaxWidth()) {
+                                    OutlinedButton(
+                                        onClick = { themeMenuExpanded = true },
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(14.dp)
+                                                        .background(paletteSwatch(selectedPalette), CircleShape)
+                                                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                                )
+                                                Text(
+                                                    text = stringResource(selectedPalette.labelRes),
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                            }
+                                            Text(
+                                                text = if (themeMenuExpanded) "▲" else "▼",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = themeMenuExpanded,
+                                        onDismissRequest = { themeMenuExpanded = false },
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    ) {
+                                        availablePalettes.forEach { palette ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = stringResource(palette.labelRes),
+                                                        color = if (selectedPalette == palette) {
+                                                            MaterialTheme.colorScheme.primary
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurface
+                                                        },
+                                                        fontWeight = if (selectedPalette == palette) FontWeight.SemiBold else FontWeight.Normal
+                                                    )
+                                                },
+                                                leadingIcon = {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(14.dp)
+                                                            .background(paletteSwatch(palette), CircleShape)
+                                                            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                                    )
+                                                },
+                                                trailingIcon = if (selectedPalette == palette) {
+                                                    {
+                                                        Text(
+                                                            text = "✓",
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                } else null,
+                                                onClick = {
+                                                    onPaletteSelected(palette)
+                                                    themeMenuExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                AnimatedVisibility(visible = selectedPalette == StillColorPalette.CUSTOM) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.custom_color_hue),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        val hueStops = remember(customTheme.saturation) {
+                                            listOf(0f, 60f, 120f, 180f, 240f, 300f, 360f).map { h ->
+                                                Color.hsl(h, customTheme.saturation.coerceIn(0.25f, 0.85f), 0.68f)
+                                            }
+                                        }
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(10.dp)
+                                                    .clip(RoundedCornerShape(5.dp))
+                                                    .background(Brush.horizontalGradient(hueStops))
+                                            )
+                                            Slider(
+                                                value = customTheme.hue,
+                                                onValueChange = { newHue ->
+                                                    onCustomThemeChanged(customTheme.copy(hue = newHue))
+                                                },
+                                                valueRange = 0f..360f,
+                                                colors = SliderDefaults.colors(
+                                                    thumbColor = MaterialTheme.colorScheme.onBackground,
+                                                    activeTrackColor = Color.Transparent,
+                                                    inactiveTrackColor = Color.Transparent
+                                                ),
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = stringResource(R.string.custom_color_intensity),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = "${(customTheme.saturation * 100).toInt()}%",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                        Slider(
+                                            value = customTheme.saturation,
+                                            onValueChange = { newSat ->
+                                                onCustomThemeChanged(customTheme.copy(saturation = newSat))
+                                            },
+                                            valueRange = 0.20f..0.85f,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+
+                                        Text(
+                                            text = stringResource(R.string.custom_color_background),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            listOf(
+                                                0 to stringResource(R.string.custom_bg_oled),
+                                                1 to stringResource(R.string.custom_bg_slate),
+                                                2 to stringResource(R.string.custom_bg_graphite)
+                                            ).forEach { (bgVal, bgLabel) ->
+                                                FilterChip(
+                                                    selected = customTheme.bgMode == bgVal,
+                                                    onClick = {
+                                                        onCustomThemeChanged(customTheme.copy(bgMode = bgVal))
+                                                    },
+                                                    label = { Text(bgLabel, fontSize = 12.sp) }
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2025,6 +2602,7 @@ fun AutumnHourglassGraphic(
     isPreparing: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val stillColors = LocalStillColors.current
     val grainPhase = if (isFlowing) {
         val infiniteTransition = rememberInfiniteTransition(label = "sand_grains")
         val phase by infiniteTransition.animateFloat(
@@ -2089,9 +2667,9 @@ fun AutumnHourglassGraphic(
 
         val sandBrushTop = Brush.verticalGradient(
             colors = if (isPreparing) {
-                listOf(AutumnSandLight, AutumnGlassOutline)
+                listOf(stillColors.sandLight, stillColors.glassOutline)
             } else {
-                listOf(AutumnSandLight, AutumnSandDeep)
+                listOf(stillColors.sandLight, stillColors.sandDeep)
             },
             startY = glassTop,
             endY = midY
@@ -2099,17 +2677,17 @@ fun AutumnHourglassGraphic(
 
         val sandBrushBottom = Brush.verticalGradient(
             colors = if (isOvertime) {
-                listOf(OvertimeGold, AutumnSandLight)
+                listOf(stillColors.overtime, stillColors.sandLight)
             } else {
-                listOf(AutumnSandLight, AutumnSandDeep)
+                listOf(stillColors.sandLight, stillColors.sandDeep)
             },
             startY = midY,
             endY = glassBottom
         )
 
         // 1. Riflesso interno del vetro
-        drawPath(path = topBulbPath, color = AutumnGlassOutline.copy(alpha = 0.08f))
-        drawPath(path = bottomBulbPath, color = AutumnGlassOutline.copy(alpha = 0.08f))
+        drawPath(path = topBulbPath, color = stillColors.glassOutline.copy(alpha = 0.08f))
+        drawPath(path = bottomBulbPath, color = stillColors.glassOutline.copy(alpha = 0.08f))
 
         // 2. Sabbia nell'ampolla superiore (con leggera conca centrale quando scorre)
         val clampedTop = topSandFraction.coerceIn(0f, 1f)
@@ -2167,7 +2745,7 @@ fun AutumnHourglassGraphic(
                 val yPos = streamStartY + progressY * streamHeight
                 val xJitter = horizontalOffsets[i] * 1.dp.toPx()
                 val radius = if (i % 2 == 0) 2.1.dp.toPx() else 1.5.dp.toPx()
-                val grainColor = if (i % 3 == 0) OvertimeGold else AutumnSandLight
+                val grainColor = if (i % 3 == 0) stillColors.overtime else stillColors.sandLight
                 drawCircle(
                     color = grainColor,
                     radius = radius,
@@ -2177,7 +2755,7 @@ fun AutumnHourglassGraphic(
         }
 
         // 5. Contorno in vetro ambrato delle due ampolle
-        val outlineColor = if (isOvertime) OvertimeGold else AutumnGlassOutline
+        val outlineColor = if (isOvertime) stillColors.overtime else stillColors.glassOutline
         drawPath(
             path = topBulbPath,
             color = outlineColor,
@@ -2193,13 +2771,13 @@ fun AutumnHourglassGraphic(
         val capWidth = w * 0.82f
         val capLeft = (w - capWidth) / 2f
         drawRoundRect(
-            color = AutumnWoodFrame,
+            color = stillColors.woodFrame,
             topLeft = Offset(capLeft, 2.dp.toPx()),
             size = Size(capWidth, capHeight),
             cornerRadius = CornerRadius(5.dp.toPx(), 5.dp.toPx())
         )
         drawRoundRect(
-            color = AutumnWoodFrame,
+            color = stillColors.woodFrame,
             topLeft = Offset(capLeft, h - capHeight - 2.dp.toPx()),
             size = Size(capWidth, capHeight),
             cornerRadius = CornerRadius(5.dp.toPx(), 5.dp.toPx())

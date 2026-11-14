@@ -14,17 +14,18 @@ Still è un'applicazione open source per Android e Wear OS, concepita per la med
 ## Come funziona l'App
 
 ### 📱 App Smartphone (Android)
-- **Doppio Stile Visivo (Clessidra & Cerchio)**: Scegli nelle impostazioni tra la **Clessidra Zen** animata (con granelli di sabbia a caduta lenta e modalità `∞` che si stabilizza a metà) e il **Cerchio Classico** minimale.
-- **Quadrante & Selezione Rapida**: Scegli il tempo dai preset immediati (`5m`, `10m`, `15m`, `20m`) oppure seleziona **∞ (Infinito)** per una sessione libera senza limiti di tempo.
-- **Pulsanti di Regolazione Fine**: Aggiungi o togli tempo al timer pre-esistente con precisione tramite i pulsanti `-5m`, `-1m`, `+1m` e `+5m`.
+- **Doppio Stile Visivo (Clessidra & Cerchio)**: Scegli nelle impostazioni tra la **Clessidra Zen** animata (con granelli di sabbia a caduta lenta e modalità `∞` che si stabilizza a metà) e il **Cerchio Classico** minimale, accompagnati da un delicato alone luminoso radiale che "respira" durante la meditazione. Tocca il timer in corso per nascondere o mostrare le cifre.
+- **Temi OLED High-Tech & Colore Personalizzato**: Scegli dal menù a tendina nelle impostazioni tra 6 palette OLED (*Autunno Caldo, Titanio Ghiaccio, Notte Nordica, Minimal OLED, Oro Satinato, Salvia Titanio*), i colori dinamici **Material You** (Android 12+) oppure il tema **Personalizzato** con slider per Tonalità, Intensità e Sfondo (*Nero OLED, Ardesia, Grafite*).
+- **Regolazione del Tempo (Anche a Sessione Avviata)**: Imposta la durata o seleziona **∞ (Infinito)** per una sessione senza limiti. Puoi usare i pulsanti `-5m`, `-1m`, `+1m` e `+5m` sia prima di partire sia **in tempo reale durante la meditazione** (o in pausa) per allungare o accorciare la sessione senza interromperla, con indicazione del tempo iniziale sotto il timer.
 - **Ritardo Iniziale (Preparazione)**: Puoi impostare un tempo di preparazione in secondi dalle impostazioni: Still mostrerà un conto alla rovescia dedicato (*"In preparazione"*) prima di far suonare il gong di inizio sessione.
-- **Gong Audio in Tempo Reale**: Il suono del gong viene sintetizzato matematicamente in tempo reale tramite `AudioTrack` su frequenze armoniche selezionabili (**432 Hz**, **528 Hz**, **216 Hz**), senza ricorrere a file MP3 compressi.
+- **Gong Audio in Tempo Reale & Modalità Avviso**: Il suono della campana tibetana viene sintetizzato matematicamente in tempo reale tramite `AudioTrack` su frequenze armoniche selezionabili (**432 Hz**, **528 Hz**, **216 Hz**), con regolazione del volume (20%–100%) e scelta della modalità di avviso (*Suono + Vibrazione*, *Solo Campane*, *Solo Vibrazione*).
 - **Campana Intermedia**: Se attivata dalle impostazioni (es. ogni 10 o 15 minuti), un gentile tocco del gong suonerà periodicamente in background per richiamare la presenza mentale durante le sessioni più lunghe.
 - **Non Disturbare Automatico (DND)**: Se abilitato e autorizzato nelle impostazioni di sistema, Still attiva automaticamente la modalità Non Disturbare non appena premi *'Inizia'*, ripristinando lo stato audio precedente quando premi *'Pausa'* o *'Salva'*.
 - **Overtime (Minuti Extra ✨)**: Al raggiungimento del tempo previsto suonano 3 rintocchi finali. Il timer non si arresta forzatamente, ma continua a conteggiare i minuti extra (Overtime), consentendoti di decidere se salvare solo il tempo pianificato oppure includere i minuti extra.
 - **Foreground Service & WakeLock**: All'avvio del timer, l'app avvia un *Foreground Service* (`StillTimerService`, tipo `mediaPlayback`) abbinato a un `PowerManager.WakeLock`. Puoi tranquillamente **spegnere lo schermo** o passare ad altre app: il conteggio prosegue in modo rigoroso e affidabile basandosi su `SystemClock.elapsedRealtime()`.
 - **Salvataggio & Storico Locale**: Alla fine di ogni sessione, Still registra sempre l'evento nello **Storico Locale (`≡`)** (con statistiche, serie di giorni consecutivi e possibilità di eliminare le singole voci) e, se collegato, lo sincronizza con Google Salute senza duplicati.
 - **Coda di Sincronizzazione & Risincronizzazione Storico**: Se Google Salute è collegato ma temporaneamente non disponibile, la sessione viene accodata e inviata automaticamente al rientro. Se invece colleghi Google Salute in un secondo momento, puoi inviare tutto lo storico pregresso con un tocco tramite il pulsante **"Risincronizza storico"** nelle impostazioni.
+- **Aggiornamenti In-App (Play Store)**: All'apertura (solo quando nessuna meditazione è in corso), l'app verifica in modo silenzioso la presenza di aggiornamenti su Google Play proponendo il download flessibile in background.
 
 ### ⌚ App Orologio (Wear OS)
 - **Interfaccia Ottimizzata per Schermi Circolari**: Navigazione fluida a pagine (`VerticalPager` e `HorizontalPager`) con anello di avanzamento, pulsanti `[-]` / `[+]` e supporto alla **corona rotante / ghiera** per regolare la durata.
@@ -90,16 +91,17 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 ## How It Works
 
 ### 📱 Smartphone App (Android)
-- **Dual Visual Timer Style (Hourglass & Circle)**: Switch in settings between the animated **Zen Hourglass** (with slow-falling sand grains and `∞` mode settling at half) and the minimal **Classic Circle**.
-- **Quick Presets & Open Mode**: Choose from instant presets (`5m`, `10m`, `15m`, `20m`) or select **∞ (Unlimited)** for an open-ended meditation session.
-- **Fine Duration Controls**: Adjust the timer with precision using `-5m`, `-1m`, `+1m`, and `+5m` buttons.
+- **Dual Visual Timer Style (Hourglass & Circle)**: Switch in settings between the animated **Zen Hourglass** (with slow-falling sand grains and `∞` mode settling at half) and the minimal **Classic Circle**, paired with a subtle breathing radial ambient glow. Tap the active timer to hide or show the digits.
+- **High-Tech OLED Themes & Custom Color Picker**: Choose from 6 curated OLED palettes (*Warm Autumn, Titanium Ice, Nordic Night, OLED Minimal, Brushed Gold, Titanium Sage*), **Material You** dynamic colors (Android 12+), or a **Custom** theme with live Hue, Intensity, and Background (*OLED Black, Slate, Graphite*) controls.
+- **Live Duration Controls**: Select **∞ (Unlimited)** for an open-ended session or adjust the timer using `-5m`, `-1m`, `+1m`, and `+5m` buttons both before starting and **live while meditating** (or paused), with the initial planned time displayed underneath the main digits.
 - **Preparation Delay**: Set a custom preparation countdown in seconds before the opening gong sounds.
-- **Real-Time Procedural Gong Synthesis**: Tibetan bowl / gong chimes are mathematically synthesized in real time via `AudioTrack` at selectable harmonic frequencies (**432 Hz**, **528 Hz**, **216 Hz**), with zero compressed MP3 files.
+- **Real-Time Procedural Gong Synthesis & Alert Modes**: Tibetan bowl / gong chimes are mathematically synthesized in real time via `AudioTrack` at selectable harmonic frequencies (**432 Hz**, **528 Hz**, **216 Hz**), with volume control (20%–100%) and selectable alert mode (*Both*, *Bell only*, *Vibrate only*).
 - **Intermediate Bell**: Optionally play a gentle mindfulness chime every X minutes during longer sessions.
 - **Automatic Do Not Disturb (DND)**: When enabled and authorized in system settings, Still automatically activates Do Not Disturb when you press *Start* and restores your previous interruption filter when you *Pause* or *Save*.
 - **Overtime (Extra Minutes ✨)**: When the planned time finishes, 3 closing gongs chime. Instead of abruptly stopping, the timer counts extra minutes (Overtime), letting you save either the planned duration or include the extra time.
 - **Foreground Service & Dynamic WakeLock**: Uses a `mediaPlayback` Foreground Service (`StillTimerService`) paired with a dynamic `PowerManager.PARTIAL_WAKE_LOCK` and `SystemClock.elapsedRealtime()` so the timer and chimes remain accurate even with the screen off.
 - **Local History & Smart Health Sync**: Every completed session is saved to the **Local History (`≡`)** with stats and streak tracking, and synced to Google Health Connect with deterministic deduplication (`clientRecordId`). If you connect Health Connect later on, you can push your entire local history at any time via the **"Resync history"** button in settings.
+- **Google Play In-App Updates**: Silently checks for available Play Store updates on launch (only when idle) using flexible background downloads.
 
 ### ⌚ Smartwatch App (Wear OS)
 - **Circular Display UI**: Page-based layout (`VerticalPager` & `HorizontalPager`) with circular progress ring, `[-]` / `[+]` duration buttons, and **rotary crown / bezel** support.

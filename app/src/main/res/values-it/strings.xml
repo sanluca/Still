@@ -14,9 +14,11 @@
     <string name="status_timer">Timer di Meditazione</string>
     <string name="text_prepare">Preparati</string>
     <string name="text_extra">Extra</string>
+    <string name="timer_initial_format">Iniziale %1$s</string>
+    <string name="timer_initial_adjusted_format">Iniziale %1$s → %2$s</string>
     <string name="button_save_with_extra">Salva con Extra (+%1$dm)</string>
     <string name="button_reset">Resetta</string>
-    <string name="button_save_planned">Salva solo Previsto (%1$dm)</string>
+    <string name="button_save_planned">Salva solo Previsto</string>
     <string name="button_pause">Pausa</string>
     <string name="button_resume">Riprendi</string>
     <string name="button_start_meditation">Inizia Meditazione</string>
@@ -34,6 +36,21 @@
     <string name="settings_timer_style">Stile Visivo del Timer:</string>
     <string name="settings_timer_style_circle">Cerchio Classico</string>
     <string name="settings_timer_style_hourglass">Clessidra</string>
+    <string name="settings_color_theme">Tema Colori:</string>
+    <string name="theme_autumn">Autunno Caldo</string>
+    <string name="theme_titanium">Titanio Ghiaccio</string>
+    <string name="theme_deep_space">Notte Nordica</string>
+    <string name="theme_nothing">Minimal OLED</string>
+    <string name="theme_champagne">Oro Satinato</string>
+    <string name="theme_sage">Salvia Titanio</string>
+    <string name="theme_custom">Personalizzato</string>
+    <string name="theme_dynamic">Material You</string>
+    <string name="custom_color_hue">Tonalità Colore</string>
+    <string name="custom_color_intensity">Intensità</string>
+    <string name="custom_color_background">Sfondo</string>
+    <string name="custom_bg_oled">Nero OLED</string>
+    <string name="custom_bg_slate">Ardesia</string>
+    <string name="custom_bg_graphite">Grafite</string>
     <string name="settings_interval_gong">Campana Intermedia (ogni X min):</string>
     <string name="settings_interval_label">Minuti di intervallo (0 = Spento)</string>
     <string name="settings_interval_placeholder">es. 10</string>
@@ -68,4 +85,6 @@
     <string name="privacy_dialog_health_guarantee">I tuoi dati sul benessere rimangono rigorosamente sul tuo dispositivo e in Connessione Salute. Still non legge, non raccoglie, non vende né condivide alcun dato personale o sanitario con terze parti o server esterni.</string>
     <string name="privacy_dialog_button_policy">Leggi Informativa sulla Privacy</string>
     <string name="privacy_dialog_button_understand">Ho capito</string>
+    <string name="update_ready_message">Aggiornamento scaricato e pronto per essere installato.</string>
+    <string name="update_ready_action">Riavvia</string>
 </resources>

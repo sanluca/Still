@@ -25,6 +25,8 @@ class StillTimerService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var timerJob: Job? = null
     private var gongJob: Job? = null
+    @Volatile private var currentTargetSeconds = 0
+    @Volatile private var currentElapsedSeconds = 0
 
     companion object {
         // true solo finché il timer del service è realmente attivo
@@ -62,6 +64,17 @@ class StillTimerService : Service() {
 
             startForeground(1, notification)
             startTimer(freq, intervalMins, selectedTime, isResume, elapsedOffset, gongVolume, alertMode)
+        } else if (intent?.action == "ADJUST_TIME") {
+            val deltaSeconds = intent.getIntExtra("DELTA_SECONDS", 0)
+            if (isTimerRunning && currentTargetSeconds > 0 && deltaSeconds != 0) {
+                val minTarget = currentElapsedSeconds + 1
+                val updated = (currentTargetSeconds + deltaSeconds).coerceAtLeast(minTarget)
+                currentTargetSeconds = updated
+                if (deltaSeconds > 0) {
+                    val remainingMs = (updated - currentElapsedSeconds).coerceAtLeast(0) * 1000L
+                    acquireWakeLock(remainingMs + WAKELOCK_MARGIN_MS)
+                }
+            }
         } else if (intent?.action == "STOP") {
             stopTimer()
             stopSelf()
@@ -81,6 +94,8 @@ class StillTimerService : Service() {
         if (isTimerRunning) return
         isTimerRunning = true
         isRunning = true
+        currentTargetSeconds = selectedTimeInSeconds
+        currentElapsedSeconds = 0
 
         val shouldPlaySound = alertMode == ALERT_MODE_BOTH || alertMode == ALERT_MODE_SOUND
         val shouldVibrate = alertMode == ALERT_MODE_BOTH || alertMode == ALERT_MODE_VIBRATION
@@ -120,16 +135,18 @@ class StillTimerService : Service() {
                 while (isTimerRunning) {
                     delay(500L)
                     val elapsedSeconds = ((SystemClock.elapsedRealtime() - startRealtime) / 1000L).toInt()
+                    currentElapsedSeconds = elapsedSeconds
                     val totalElapsedSeconds = elapsedOffset + elapsedSeconds
+                    val targetSeconds = currentTargetSeconds
 
                     // Sessione senza limite o in overtime: rinnovo a finestre di 15 min (mai un lock "infinito")
-                    if ((selectedTimeInSeconds == -1 || isOvertime) &&
+                    if ((targetSeconds == -1 || isOvertime) &&
                         elapsedSeconds - lastWakeLockRenewSec >= WAKELOCK_RENEW_SEC) {
                         lastWakeLockRenewSec = elapsedSeconds
                         acquireWakeLock(WAKELOCK_MARGIN_MS)
                     }
 
-                    val isReachingEndNow = selectedTimeInSeconds != -1 && !isOvertime && (selectedTimeInSeconds - elapsedSeconds) <= 0
+                    val isReachingEndNow = targetSeconds != -1 && !isOvertime && (targetSeconds - elapsedSeconds) <= 0
 
                     if (!isOvertime && !isReachingEndNow && intervalMins > 0 && totalElapsedSeconds > 0 &&
                         totalElapsedSeconds % (intervalMins * 60) == 0 && lastIntervalGongSec != totalElapsedSeconds) {
