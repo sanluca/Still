@@ -11,6 +11,10 @@
     <string name="button_start">Inizia</string>
     <string name="settings_title">⚙️ Impostazioni</string>
     <string name="settings_gong_sound">Suono Gong:</string>
+    <string name="bell_name_gong">Gong</string>
+    <string name="bell_name_crystal">Quarzo</string>
+    <string name="bell_name_keisu">Keisu</string>
+    <string name="bell_name_tingsha">Tingsha</string>
     <string name="settings_gong_volume">Volume Campana:</string>
     <string name="settings_alert_mode">Modalità Avviso:</string>
     <string name="alert_mode_both">Entrambi</string>
@@ -18,4 +22,9 @@
     <string name="alert_mode_vibrate">Vibraz.</string>
     <string name="settings_app_version">Still v%1$s</string>
     <string name="status_timer">Timer di Meditazione</string>
+    <string name="settings_color_theme">Tema: %1$s</string>
+    <string name="theme_spring">Primavera</string>
+    <string name="theme_summer">Estate</string>
+    <string name="theme_autumn">Autunno</string>
+    <string name="theme_winter">Inverno</string>
 </resources>

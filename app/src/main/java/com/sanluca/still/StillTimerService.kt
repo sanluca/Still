@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
@@ -45,6 +44,7 @@ class StillTimerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "START") {
             val freq = intent.getDoubleExtra("FREQ", 432.0)
+            val intervalFreq = intent.getDoubleExtra("INTERVAL_FREQ", TINGSHA_FREQ_HZ)
             val intervalMins = intent.getIntExtra("INTERVAL", 0)
             val selectedTime = intent.getIntExtra("TIME", 600)
             val isResume = intent.getBooleanExtra("RESUME", false) // ripresa dopo pausa: TIME è il tempo rimanente
@@ -63,7 +63,7 @@ class StillTimerService : Service() {
                 .build()
 
             startForeground(1, notification)
-            startTimer(freq, intervalMins, selectedTime, isResume, elapsedOffset, gongVolume, alertMode)
+            startTimer(freq, intervalMins, selectedTime, isResume, elapsedOffset, gongVolume, alertMode, intervalFreq)
         } else if (intent?.action == "ADJUST_TIME") {
             val deltaSeconds = intent.getIntExtra("DELTA_SECONDS", 0)
             if (isTimerRunning && currentTargetSeconds > 0 && deltaSeconds != 0) {
@@ -89,7 +89,8 @@ class StillTimerService : Service() {
         isResume: Boolean = false,
         elapsedOffset: Int = 0,
         gongVolume: Int = 100,
-        alertMode: Int = ALERT_MODE_BOTH
+        alertMode: Int = ALERT_MODE_BOTH,
+        intervalGongFreqHz: Double = gongFreqHz
     ) {
         if (isTimerRunning) return
         isTimerRunning = true
@@ -157,7 +158,7 @@ class StillTimerService : Service() {
                         if (shouldPlaySound) {
                             gongJob?.cancel()
                             gongJob = serviceScope.launch(Dispatchers.Default) {
-                                playGongSound(this@StillTimerService, gongFreqHz, repeatCount = 1, volumePercent = gongVolume)
+                                playGongSound(this@StillTimerService, intervalGongFreqHz, repeatCount = 1, volumePercent = gongVolume)
                             }
                         }
                     }
@@ -199,7 +200,7 @@ class StillTimerService : Service() {
     private fun acquireWakeLock(timeoutMs: Long) {
         if (!isTimerRunning) return // il service è già stato fermato: non creare lock orfani
         wakeLock?.let { if (it.isHeld) it.release() }
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Still::ServiceWakeLock").apply {
             acquire(timeoutMs)
         }

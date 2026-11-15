@@ -11,6 +11,10 @@
     <string name="button_start">Start</string>
     <string name="settings_title">⚙️ Settings</string>
     <string name="settings_gong_sound">Gong Sound:</string>
+    <string name="bell_name_gong">Gong</string>
+    <string name="bell_name_crystal">Crystal</string>
+    <string name="bell_name_keisu">Keisu</string>
+    <string name="bell_name_tingsha">Tingsha</string>
     <string name="settings_gong_volume">Bell Volume:</string>
     <string name="settings_alert_mode">Alert Mode:</string>
     <string name="alert_mode_both">Both</string>
@@ -18,4 +22,9 @@
     <string name="alert_mode_vibrate">Vibrate</string>
     <string name="settings_app_version">Still v%1$s</string>
     <string name="status_timer">Meditation Timer</string>
+    <string name="settings_color_theme">Theme: %1$s</string>
+    <string name="theme_spring">Spring</string>
+    <string name="theme_summer">Summer</string>
+    <string name="theme_autumn">Autumn</string>
+    <string name="theme_winter">Winter</string>
 </resources>

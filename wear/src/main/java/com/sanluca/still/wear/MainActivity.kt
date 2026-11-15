@@ -3,6 +3,7 @@
 package com.sanluca.still.wear
 
 import com.sanluca.still.wear.ui.theme.OvertimeGold
+import com.sanluca.still.wear.ui.theme.StillColorPalette
 import com.sanluca.still.wear.ui.theme.StillTheme
 import android.Manifest
 import android.content.pm.PackageManager
@@ -22,6 +23,7 @@ import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -67,7 +69,12 @@ import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -105,10 +112,16 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
         ambientController = AmbientModeSupport.attach(this)
         ambientController.setAutoResumeEnabled(true)
         setContent {
-            StillTheme {
+            var selectedPalette by remember { mutableStateOf(getSavedColorPalette(this)) }
+            StillTheme(palette = selectedPalette) {
                 WearMeditationApp(
                     isAmbient = isAmbientState.value,
-                    ambientUpdateTick = ambientUpdateTickState.value
+                    ambientUpdateTick = ambientUpdateTickState.value,
+                    selectedPalette = selectedPalette,
+                    onPaletteSelected = { newPalette ->
+                        selectedPalette = newPalette
+                        saveColorPalette(this, newPalette)
+                    }
                 )
             }
         }
@@ -139,11 +152,22 @@ private const val KEY_PREP_TIME = "prep_time_seconds"
 private const val KEY_GONG_FREQ = "gong_frequency_hz"
 private const val KEY_GONG_VOLUME = "gong_volume_percent"
 private const val KEY_ALERT_MODE = "alert_mode"
+private const val KEY_COLOR_PALETTE = "color_palette"
 private const val KEY_PENDING_SESSIONS = "pending_watch_sessions"
 
 const val ALERT_MODE_BOTH = 0
 const val ALERT_MODE_SOUND = 1
 const val ALERT_MODE_VIBRATION = 2
+
+fun getSavedColorPalette(context: Context): StillColorPalette {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return StillColorPalette.fromId(prefs.getString(KEY_COLOR_PALETTE, StillColorPalette.AUTUMN.id))
+}
+
+fun saveColorPalette(context: Context, palette: StillColorPalette) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putString(KEY_COLOR_PALETTE, palette.id).apply()
+}
 
 fun getSavedPrepTime(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -311,7 +335,12 @@ fun cancelGongVibration(context: Context) {
 }
 
 @Composable
-fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) {
+fun WearMeditationApp(
+    isAmbient: Boolean = false,
+    ambientUpdateTick: Long = 0L,
+    selectedPalette: StillColorPalette = StillColorPalette.AUTUMN,
+    onPaletteSelected: (StillColorPalette) -> Unit = {}
+) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
@@ -415,16 +444,41 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
     val backgroundColor = if (isAmbient && isTimerRunning) Color.Black else MaterialTheme.colorScheme.background
     val overtimeColor = if (isAmbient && isTimerRunning) Color.White else OvertimeGold
     val prepColor = if (isAmbient && isTimerRunning) Color.White else MaterialTheme.colorScheme.tertiary
+    val currentView = LocalView.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val keepScreenAwake = isTimerRunning || isOvertime
+
+    // Triplo presidio per non far spegnere lo schermo durante preparazione, meditazione e tempo extra
+    DisposableEffect(keepScreenAwake, lifecycleOwner) {
+        val window = context.findActivity()?.window
+        fun applyKeepScreenOn(awake: Boolean) {
+            currentView.keepScreenOn = awake
+            if (awake) {
+                window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+        applyKeepScreenOn(keepScreenAwake)
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                applyKeepScreenOn(keepScreenAwake)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            applyKeepScreenOn(false)
+        }
+    }
 
     LaunchedEffect(isTimerRunning) {
-        val activity = context.findActivity()
         if (isTimerRunning) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
-            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (!StillTimerService.isServiceRunning) {
                 if (sessionStartTime == null) {
                     val serviceIntent = Intent(context, StillTimerService::class.java).apply {
@@ -454,7 +508,6 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                 }
             }
         } else {
-            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (StillTimerService.isServiceRunning) {
                 val stopIntent = Intent(context, StillTimerService::class.java).apply {
                     action = StillTimerService.ACTION_STOP
@@ -523,7 +576,8 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundColor),
+            .background(backgroundColor)
+            .then(if (keepScreenAwake) Modifier.keepScreenOn() else Modifier),
         contentAlignment = Alignment.Center
     ) {
         HorizontalPager(
@@ -995,33 +1049,50 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                    val gongRows = listOf(
+                                        listOf(
+                                            432.0 to stringResource(R.string.bell_name_crystal),
+                                            528.0 to stringResource(R.string.bell_name_keisu)
+                                        ),
+                                        listOf(
+                                            216.0 to stringResource(R.string.bell_name_gong),
+                                            2640.0 to stringResource(R.string.bell_name_tingsha)
+                                        )
+                                    )
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        listOf(432.0 to "432Hz", 528.0 to "528Hz", 216.0 to "216Hz").forEach { (freq, freqLabel) ->
-                                            val isSelected = gongFreqHz == freq
-                                            Button(
-                                                onClick = {
-                                                    gongFreqHz = freq
-                                                    saveGongFrequency(context, freq)
-                                                    playPreviewGong(freq, gongVolumePercent)
-                                                },
-                                                enabled = isSoundEnabled,
-                                                modifier = Modifier.height(26.dp),
-                                                contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                                    contentColor = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
+                                        gongRows.forEach { rowItems ->
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text(
-                                                    text = freqLabel,
-                                                    fontSize = 9.sp,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                    maxLines = 1,
-                                                    softWrap = false
-                                                )
+                                                rowItems.forEach { (freq, freqLabel) ->
+                                                    val isSelected = gongFreqHz == freq
+                                                    Button(
+                                                        onClick = {
+                                                            gongFreqHz = freq
+                                                            saveGongFrequency(context, freq)
+                                                            playPreviewGong(freq, gongVolumePercent)
+                                                        },
+                                                        enabled = isSoundEnabled,
+                                                        modifier = Modifier.height(26.dp),
+                                                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                                            contentColor = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    ) {
+                                                        Text(
+                                                            text = freqLabel,
+                                                            fontSize = 9.sp,
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                            maxLines = 1,
+                                                            softWrap = false
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1081,11 +1152,11 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                                 }
                             }
                         } else {
-                            // --- SOTTOPAGINA 2: PREPARAZIONE & VERSIONE ---
+                            // --- SOTTOPAGINA 2: TEMA COLORI + PREPARAZIONE + VERSIONE ---
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(start = 10.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+                                    .padding(start = 10.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.SpaceEvenly
                             ) {
@@ -1099,13 +1170,59 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                                         .padding(horizontal = 10.dp, vertical = 2.dp)
                                 )
 
+                                // 1. SELETTORE TEMA (4 PALLINI COLORATI SENZA ICONE)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.settings_color_theme,
+                                            stringResource(selectedPalette.labelRes)
+                                        ),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        StillColorPalette.entries.forEach { palette ->
+                                            val isSelected = selectedPalette == palette
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(30.dp)
+                                                    .clickable(
+                                                        indication = null,
+                                                        interactionSource = remember { MutableInteractionSource() }
+                                                    ) {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        onPaletteSelected(palette)
+                                                    }
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(if (isSelected) 25.dp else 21.dp)
+                                                        .background(palette.swatchColor, CircleShape)
+                                                        .border(
+                                                            width = if (isSelected) 2.2.dp else 1.dp,
+                                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.outline,
+                                                            shape = CircleShape
+                                                        )
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 2. PREPARAZIONE (-5s / +5s)
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
                                         text = stringResource(R.string.status_preparing),
-                                        fontSize = 11.sp,
+                                        fontSize = 10.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(3.dp))
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -1118,15 +1235,15 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                                                 }
                                             },
                                             enabled = prepTimeSeconds >= 5,
-                                            modifier = Modifier.size(width = 48.dp, height = 30.dp),
+                                            modifier = Modifier.size(width = 44.dp, height = 26.dp),
                                             contentPadding = PaddingValues(0.dp)
                                         ) {
-                                            Text("-5s", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                            Text("-5s", fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                         }
 
                                         Text(
                                             text = "${prepTimeSeconds}s",
-                                            fontSize = 16.sp,
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = prepColor
                                         )
@@ -1136,17 +1253,17 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                                                 prepTimeSeconds += 5
                                                 savePrepTime(context, prepTimeSeconds)
                                             },
-                                            modifier = Modifier.size(width = 48.dp, height = 30.dp),
+                                            modifier = Modifier.size(width = 44.dp, height = 26.dp),
                                             contentPadding = PaddingValues(0.dp)
                                         ) {
-                                            Text("+5s", fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                            Text("+5s", fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                         }
                                     }
                                 }
 
                                 Text(
                                     text = stringResource(R.string.settings_app_version, BuildConfig.VERSION_NAME),
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -1182,5 +1299,5 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
 fun formatTime(totalSeconds: Int): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
-    return String.format("%02d:%02d", minutes, seconds)
+    return String.format(Locale.US, "%02d:%02d", minutes, seconds)
 }

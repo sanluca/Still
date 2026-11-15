@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
@@ -231,7 +230,7 @@ class StillTimerService : Service() {
     private fun acquireWakeLock(timeoutMs: Long) {
         if (!isTimerRunning) return
         wakeLock?.let { if (it.isHeld) it.release() }
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "StillWear::ServiceWakeLock").apply {
             acquire(timeoutMs)
         }

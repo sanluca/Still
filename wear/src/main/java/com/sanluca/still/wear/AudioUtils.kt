@@ -6,6 +6,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import kotlinx.coroutines.delay
+import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.sin
 
@@ -46,7 +47,7 @@ private fun releaseFixedWearStreamVolume(audioManager: AudioManager) {
 }
 
 /**
- * Utility audio per l'orologio (Wear OS / Pixel Watch): supporta le 3 frequenze (432 Hz, 528 Hz, 216 Hz)
+ * Utility audio per l'orologio (Wear OS / Pixel Watch): supporta le frequenze (432 Hz, 528 Hz, 216 Hz, Tingsha)
  * e i 3 Gong di chiusura, forzando la riproduzione tramite USAGE_ALARM e CONTENT_TYPE_SONIFICATION dall'altoparlante
  * a volume assoluto costante (ripristinando il volume di sistema dell'orologio al termine).
  */
@@ -57,24 +58,60 @@ suspend fun playGongSound(
     volumePercent: Int = 100
 ) {
     val sampleRate = 44100
-    val durationSeconds = 3.5
+    val isTingsha = frequencyHz > 2500.0
+    val durationSeconds = if (isTingsha) 2.5 else 3.5
     val numSamples = (durationSeconds * sampleRate).toInt()
     val buffer = ShortArray(numSamples)
     val normalizedVol = (volumePercent.coerceIn(0, 100) / 100.0)
     // Curva quadratica percettiva per rendere ogni step del 20% naturale all'orecchio umano
     val amplitudeGain = normalizedVol * normalizedVol
 
+    val fadeInSec = if (isTingsha) 0.008 else 0.005
+    val fadeOutSec = 0.18
+    val fadeOutStart = durationSeconds - fadeOutSec
+
     for (i in 0 until numSamples) {
         val t = i.toDouble() / sampleRate
-        val envelope = exp(-1.2 * t)
-        
-        val wave = 0.6 * sin(2.0 * Math.PI * frequencyHz * t) +
-                   0.25 * sin(2.0 * Math.PI * frequencyHz * 2.01 * t) +
-                   0.1 * sin(2.0 * Math.PI * frequencyHz * 3.02 * t) +
-                   0.05 * sin(2.0 * Math.PI * frequencyHz * 4.03 * t)
+        val fadeIn = if (t < fadeInSec) {
+            0.5 * (1.0 - cos(Math.PI * (t / fadeInSec).coerceIn(0.0, 1.0)))
+        } else {
+            1.0
+        }
+        val fadeOut = if (t > fadeOutStart) {
+            0.5 * (1.0 + cos(Math.PI * ((t - fadeOutStart) / fadeOutSec).coerceIn(0.0, 1.0)))
+        } else {
+            1.0
+        }
+        val windowGain = fadeIn * fadeOut
 
-        val value = (wave * envelope * 32767 * amplitudeGain).toInt()
-        buffer[i] = value.coerceIn(-32768, 32767).toShort()
+        val sampleValue = if (isTingsha) {
+            val envFundamental = exp(-2.35 * t)
+            val envShimmer = exp(-2.55 * t)
+            val envMetallic1 = exp(-4.8 * t)
+            val envMetallic2 = exp(-7.5 * t)
+            val envPing = exp(-18.0 * t)
+
+            val wave = 0.44 * sin(2.0 * Math.PI * frequencyHz * t) * envFundamental +
+                       0.24 * sin(2.0 * Math.PI * (frequencyHz + 4.2) * t) * envShimmer +
+                       0.16 * sin(2.0 * Math.PI * (frequencyHz * 1.482) * t) * envMetallic1 +
+                       0.09 * sin(2.0 * Math.PI * (frequencyHz * 2.115) * t) * envMetallic2 +
+                       0.07 * sin(2.0 * Math.PI * (frequencyHz * 2.793) * t) * envPing
+
+            (wave * 0.78 * windowGain * 32767 * amplitudeGain).toInt()
+        } else {
+            val envelope = exp(-1.2 * t)
+            val wave = 0.6 * sin(2.0 * Math.PI * frequencyHz * t) +
+                       0.25 * sin(2.0 * Math.PI * frequencyHz * 2.01 * t) +
+                       0.1 * sin(2.0 * Math.PI * frequencyHz * 3.02 * t) +
+                       0.05 * sin(2.0 * Math.PI * frequencyHz * 4.03 * t)
+
+            (wave * envelope * windowGain * 32767 * amplitudeGain).toInt()
+        }
+        buffer[i] = sampleValue.coerceIn(-32768, 32767).toShort()
+    }
+    if (numSamples > 0) {
+        buffer[0] = 0
+        buffer[numSamples - 1] = 0
     }
 
     var audioTrack: AudioTrack? = null
