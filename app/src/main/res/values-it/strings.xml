@@ -68,9 +68,13 @@
     <string name="stats_streak">Striscia</string>
     <string name="stats_min_format">%1$d min</string>
     <string name="stats_streak_format">%1$d g</string>
-    <string name="stats_history_title">Cronologia Meditazioni:</string>
+    <string name="stats_best_streak_format">Record: %1$d g</string>
+    <string name="stats_history_title">Calendario Meditazioni</string>
     <string name="stats_history_empty">Nessuna sessione registrata finora. Completa una meditazione!</string>
     <string name="stats_history_item">%1$d minuti</string>
+    <string name="stats_session_time_range">%1$s – %2$s</string>
+    <string name="stats_day_total_summary">%1$d sessioni • %2$d min totali</string>
+    <string name="stats_day_single_summary">1 sessione • %1$d min totali</string>
     <string name="dialog_delete_title">Elimina Meditazione</string>
     <string name="dialog_delete_message">Vuoi davvero eliminare la sessione di %1$d min del %2$s sia dall\'app che da Google Connessione Salute?</string>
     <string name="button_delete">Elimina</string>

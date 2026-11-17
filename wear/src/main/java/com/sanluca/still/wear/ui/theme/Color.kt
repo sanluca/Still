@@ -24,20 +24,20 @@ enum class StillColorPalette(val id: String, val labelRes: Int, val swatchColor:
 
 // 1. PRIMAVERA (Verde Germoglio, Rosa Ciliegio, Giallo Polline)
 val SpringColorScheme = darkColorScheme(
-    primary = Color(0xFF64A348),
+    primary = Color(0xFF64A348),            // Verde Germoglio Moegi Vivo
     onPrimary = Color(0xFF071F03),
     primaryContainer = Color(0xFF1E3F24),
     onPrimaryContainer = Color(0xFFDFF5DC),
-    secondary = Color(0xFFE16B8C),
+    secondary = Color(0xFFE16B8C),          // Rosa Fiore di Prugno Kōbai
     onSecondary = Color(0xFF2B0612),
     secondaryContainer = Color(0xFF3E1C29),
     onSecondaryContainer = Color(0xFFFFE5EE),
-    tertiary = Color(0xFFF1D88A),
+    tertiary = Color(0xFFF1D88A),           // Giallo Polline Yamabuki
     onTertiary = Color(0xFF2B2103),
-    background = Color(0xFF091712),
+    background = Color.Black,               // Nero OLED assoluto
     onBackground = Color(0xFFFBF8F3),
-    surface = Color(0xFF10221B),
-    onSurface = Color(0xFFF596AA),
+    surface = Color.Black,
+    onSurface = Color(0xFFFBF8F3),
     surfaceVariant = Color(0xFF183128),
     onSurfaceVariant = Color(0xFFB7E4C7),
     outline = Color(0xFF345E4E),
@@ -46,65 +46,65 @@ val SpringColorScheme = darkColorScheme(
 
 // 2. ESTATE (Rosa-Corallo Ibisco, Verde Palma, Turchese Laguna, Giallo Sole)
 val SummerColorScheme = darkColorScheme(
-    primary = Color(0xFFE85D75),
+    primary = Color(0xFFE85D75),            // Rosa-Corallo Ibisco
     onPrimary = Color(0xFF28050C),
     primaryContainer = Color(0xFF143C4C),
     onPrimaryContainer = Color(0xFFCAF0F8),
-    secondary = Color(0xFF40916C),
+    secondary = Color(0xFF40916C),          // Verde Palma / Bambù
     onSecondary = Color(0xFF041F13),
-    secondaryContainer = Color(0xFF174559),
-    onSecondaryContainer = Color(0xFFE0FAFF),
-    tertiary = Color(0xFF48CAE4),
+    secondaryContainer = Color(0xFF133829),
+    onSecondaryContainer = Color(0xFFD8F3DC),
+    tertiary = Color(0xFF48CAE4),           // Turchese Laguna
     onTertiary = Color(0xFF032029),
-    background = Color(0xFF072436),
-    onBackground = Color(0xFFFFFDF7),
-    surface = Color(0xFF0D2B40),
-    onSurface = Color(0xFFFFD166),
+    background = Color.Black,               // Nero OLED assoluto
+    onBackground = Color(0xFFFFFBF2),
+    surface = Color.Black,
+    onSurface = Color(0xFFFFFBF2),
     surfaceVariant = Color(0xFF163852),
     onSurfaceVariant = Color(0xFF72EFDD),
     outline = Color(0xFF2A5C7A),
     outlineVariant = Color(0xFF2A5C7A)
 )
 
-// 3. AUTUNNO (Verde Muschio, Acero/Ambra, Oro Ginkgo, Castagno)
+// 3. AUTUNNO (Verde Muschio del Bosco, Viola Prugna, Ambra Calda)
 val DarkWarmColorScheme = darkColorScheme(
-    primary = Color(0xFF6A994E),
+    primary = Color(0xFF6A994E),            // Verde Muschio del Bosco
     onPrimary = Color(0xFF091F03),
     primaryContainer = Color(0xFF23381B),
     onPrimaryContainer = Color(0xFFE2F2D8),
-    secondary = Color(0xFFE07A5F),
-    onSecondary = Color(0xFF260B04),
-    secondaryContainer = Color(0xFF4A251B),
-    onSecondaryContainer = Color(0xFFFFE8E0),
-    tertiary = Color(0xFFF4A261),
+    secondary = Color(0xFFB56576),          // Viola Prugna / Mosto
+    onSecondary = Color(0xFF260910),
+    secondaryContainer = Color(0xFF3D1D24),
+    onSecondaryContainer = Color(0xFFFFE3E8),
+    tertiary = Color(0xFFF4A261),           // Ambra Calda
     onTertiary = Color(0xFF291302),
-    background = Color(0xFF0B1711),
-    onBackground = Color(0xFFFFF8EB),
-    surface = Color(0xFF152019),
-    onSurface = Color(0xFFF4C95D),
+    background = Color.Black,               // Nero OLED assoluto
+    onBackground = Color(0xFFFDF6EC),
+    surface = Color.Black,
+    onSurface = Color(0xFFFDF6EC),
     surfaceVariant = Color(0xFF212E25),
     onSurfaceVariant = Color(0xFFC2CCB8),
     outline = Color(0xFF3E5243),
     outlineVariant = Color(0xFF3E5243)
 )
 
-// 4. INVERNO (Rosso Camelia/Camino, Verde Abete, Ghiaccio Artico)
+// 4. INVERNO (Rosso Camelia/Camino, Verde Abete, Ciano Ghiaccio)
 val WinterColorScheme = darkColorScheme(
-    primary = Color(0xFFE06D53),
+    primary = Color(0xFFE06D53),            // Rosso Camelia / Calore Camino
     onPrimary = Color(0xFF290902),
     primaryContainer = Color(0xFF1B354D),
     onPrimaryContainer = Color(0xFFE0F2FE),
-    secondary = Color(0xFF40916C),
+    secondary = Color(0xFF40916C),          // Verde Abete Sempreverde
     onSecondary = Color(0xFF041F13),
-    secondaryContainer = Color(0xFF244E6B),
-    onSecondaryContainer = Color(0xFFE0F2FE),
-    tertiary = Color(0xFF90E0EF),
+    secondaryContainer = Color(0xFF163829),
+    onSecondaryContainer = Color(0xFFD8F3DC),
+    tertiary = Color(0xFF90E0EF),           // Ciano Ghiaccio
     onTertiary = Color(0xFF032029),
-    background = Color(0xFF071624),
-    onBackground = Color(0xFFF2EFE6),
-    surface = Color(0xFF0D2033),
-    onSurface = Color(0xFFA9E5FF),
-    surfaceVariant = Color(0xFF14273D),
+    background = Color.Black,               // Nero OLED assoluto
+    onBackground = Color(0xFFF8FBFF),
+    surface = Color.Black,
+    onSurface = Color(0xFFF8FBFF),
+    surfaceVariant = Color(0xFF162D45),
     onSurfaceVariant = Color(0xFFB7C9B9),
     outline = Color(0xFF2D4B6B),
     outlineVariant = Color(0xFF2D4B6B)

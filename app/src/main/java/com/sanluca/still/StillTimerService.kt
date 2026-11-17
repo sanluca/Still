@@ -49,6 +49,7 @@ class StillTimerService : Service() {
             val selectedTime = intent.getIntExtra("TIME", 600)
             val isResume = intent.getBooleanExtra("RESUME", false) // ripresa dopo pausa: TIME è il tempo rimanente
             val elapsedOffset = intent.getIntExtra("ELAPSED_OFFSET", 0)
+            val prepSeconds = if (isResume) 0 else intent.getIntExtra("PREP", 0).coerceAtLeast(0) // preparazione contata dal service
             autoDndEnabled = intent.getBooleanExtra("DND", false)
             val gongVolume = intent.getIntExtra("VOLUME", 100)
             val alertMode = intent.getIntExtra("ALERT_MODE", ALERT_MODE_BOTH)
@@ -63,7 +64,7 @@ class StillTimerService : Service() {
                 .build()
 
             startForeground(1, notification)
-            startTimer(freq, intervalMins, selectedTime, isResume, elapsedOffset, gongVolume, alertMode, intervalFreq)
+            startTimer(freq, intervalMins, selectedTime, isResume, elapsedOffset, gongVolume, alertMode, intervalFreq, prepSeconds)
         } else if (intent?.action == "ADJUST_TIME") {
             val deltaSeconds = intent.getIntExtra("DELTA_SECONDS", 0)
             if (isTimerRunning && currentTargetSeconds > 0 && deltaSeconds != 0) {
@@ -90,7 +91,8 @@ class StillTimerService : Service() {
         elapsedOffset: Int = 0,
         gongVolume: Int = 100,
         alertMode: Int = ALERT_MODE_BOTH,
-        intervalGongFreqHz: Double = gongFreqHz
+        intervalGongFreqHz: Double = gongFreqHz,
+        prepSeconds: Int = 0
     ) {
         if (isTimerRunning) return
         isTimerRunning = true
@@ -107,14 +109,19 @@ class StillTimerService : Service() {
 
         // WakeLock vincolato alla sessione: durata prevista + 15 min di margine
         val wakeLockTimeoutMs = if (selectedTimeInSeconds > 0) {
-            selectedTimeInSeconds * 1000L + WAKELOCK_MARGIN_MS
+            (selectedTimeInSeconds + prepSeconds) * 1000L + WAKELOCK_MARGIN_MS
         } else {
-            WAKELOCK_MARGIN_MS
+            prepSeconds * 1000L + WAKELOCK_MARGIN_MS
         }
         acquireWakeLock(wakeLockTimeoutMs)
 
         timerJob = serviceScope.launch {
             try {
+                // Preparazione: conteggio nel service (foreground + WakeLock), così non dipende dalla UI
+                if (prepSeconds > 0) {
+                    delay(prepSeconds * 1000L)
+                }
+
                 // Alla ripresa dopo una pausa non si ripete il gong d'inizio
                 if (!isResume) {
                     if (shouldVibrate) {

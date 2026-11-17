@@ -7,6 +7,7 @@ import com.sanluca.still.wear.ui.theme.StillColorPalette
 import com.sanluca.still.wear.ui.theme.StillTheme
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -30,7 +31,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,7 +45,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -61,6 +72,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -72,6 +85,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -422,9 +437,15 @@ fun WearMeditationApp(
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        while (true) {
-            currentClockText = clockFormatter.format(Date())
-            delay(10_000L)
+    }
+
+    // Aggiornamento periodico dell'ora solo con schermo attivo (in ambient bastano i tick di sistema)
+    LaunchedEffect(isAmbient) {
+        if (!isAmbient) {
+            while (true) {
+                currentClockText = clockFormatter.format(Date())
+                delay(10_000L)
+            }
         }
     }
 
@@ -441,12 +462,15 @@ fun WearMeditationApp(
         }
     }
 
-    val backgroundColor = if (isAmbient && isTimerRunning) Color.Black else MaterialTheme.colorScheme.background
-    val overtimeColor = if (isAmbient && isTimerRunning) Color.White else OvertimeGold
-    val prepColor = if (isAmbient && isTimerRunning) Color.White else MaterialTheme.colorScheme.tertiary
+    val backgroundColor = if (isAmbient) Color.Black else MaterialTheme.colorScheme.background
+    val overtimeColor = if (isAmbient) Color.White else OvertimeGold
+    val prepColor = if (isAmbient) Color.White else MaterialTheme.colorScheme.tertiary
     val currentView = LocalView.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val keepScreenAwake = isTimerRunning || isOvertime
+
+    // Con timer attivo o in overtime lo swipe-to-dismiss/back non chiude per errore l'Activity
+    BackHandler(enabled = isTimerRunning || isOvertime) { }
 
     // Triplo presidio per non far spegnere lo schermo durante preparazione, meditazione e tempo extra
     DisposableEffect(keepScreenAwake, lifecycleOwner) {
@@ -563,16 +587,6 @@ fun WearMeditationApp(
         if (!showSettingsPage) pagerState.scrollToPage(0)
     }
 
-    // Dimensioni edge-to-edge dinamiche: partiamo dal bordo reale dello schermo verso l'interno
-    val config = LocalConfiguration.current
-    val screenDiameterDp = minOf(config.screenWidthDp, config.screenHeightDp).dp
-    val outerMarginDp = 4.dp
-    val ringGapDp = 5.dp
-    val crescentThicknessDp = (screenDiameterDp * 0.12f).coerceIn(22.dp, 28.dp)
-    val circleSize = (screenDiameterDp - (outerMarginDp + crescentThicknessDp + ringGapDp) * 2)
-        .coerceAtLeast(112.dp)
-    val crescentCenterOffset = circleSize / 2 + ringGapDp + crescentThicknessDp / 2
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -584,348 +598,369 @@ fun WearMeditationApp(
             state = pagerState,
             modifier = Modifier.fillMaxSize()
         ) { page ->
-            // ================= PAGINA 1: TIMER (corona concentrica a filo ghiera) =================
-            if (page == 0) Box(
+            // ================= PAGINA 1: TIMER (quadrante del tempo minimale perimetrale) =================
+            if (page == 0) BoxWithConstraints(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
+                val diameter = minOf(maxWidth, maxHeight)
                 val isPausedState = !isInitialState && !isTimerRunning && !isOvertime
-                val showSideCrescents = isInitialState || isPausedState || isOvertime
+                val showSideControls = isInitialState || isPausedState || isOvertime
                 val canDecrease = selectedTimeInSeconds != -1
 
-                val leftInteractionSource = remember { MutableInteractionSource() }
-                val rightInteractionSource = remember { MutableInteractionSource() }
-                val bottomInteractionSource = remember { MutableInteractionSource() }
-                val isLeftPressed by leftInteractionSource.collectIsPressedAsState()
-                val isRightPressed by rightInteractionSource.collectIsPressedAsState()
-                val isBottomPressed by bottomInteractionSource.collectIsPressedAsState()
-
-                val crescentSecondaryColor = MaterialTheme.colorScheme.secondaryContainer
-                val crescentConfirmColor = MaterialTheme.colorScheme.secondary
-                val crescentPrimaryColor = MaterialTheme.colorScheme.primary
-                val crescentPressedColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                val crescentPassiveColor = MaterialTheme.colorScheme.surfaceVariant
-                val crescentDisabledColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-
-                // 1. DISEGNO GHIERA CIRCOLARE COMPLETA A 360° (4 SETTORI INCASTRATI: ORE 12, 3, 6, 9)
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val strokePx = crescentThicknessDp.toPx()
-                    val gapPx = 3.dp.toPx()
-                    val trackRadius = crescentCenterOffset.toPx()
-                    val arcDiameter = trackRadius * 2f
-                    val arcTopLeft = androidx.compose.ui.geometry.Offset(
-                        x = (size.width - arcDiameter) / 2f,
-                        y = (size.height - arcDiameter) / 2f
+                // Animazione di pulsazione lenta del respiro (solo con timer attivo e non in ambient)
+                // Animazione di pulsazione lenta del respiro: attiva solo con timer in esecuzione e non in ambient
+                val breathGlowAlphaState: androidx.compose.runtime.State<Float>? = if (isTimerRunning && !isAmbient) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "wear_breath_transition")
+                    infiniteTransition.animateFloat(
+                        initialValue = 0.08f,
+                        targetValue = 0.22f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(durationMillis = 3500, easing = LinearEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "wear_breath_glow"
                     )
+                } else {
+                    null
+                }
+
+                val primaryColor = MaterialTheme.colorScheme.primary
+                val tertiaryColor = MaterialTheme.colorScheme.tertiary
+                val ringTrackColor = if (isAmbient) Color.Transparent else primaryColor.copy(alpha = 0.14f)
+
+                // 1. CANVAS PERIMETRALE PULITO (Glow radiale soffuso + Traccia di fondo + Arco di avanzamento)
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    val centerOffset = Offset(w / 2f, h / 2f)
+                    val outerPaddingPx = 4.dp.toPx()
+                    val arcDiameter = (minOf(w, h) - outerPaddingPx * 2).coerceAtLeast(10f)
+                    val arcTopLeft = Offset((w - arcDiameter) / 2f, (h - arcDiameter) / 2f)
                     val arcSize = androidx.compose.ui.geometry.Size(arcDiameter, arcDiameter)
-                    val segmentStroke = Stroke(width = strokePx, cap = StrokeCap.Round)
-                    val cutoutStroke = Stroke(width = strokePx + gapPx * 2f, cap = StrokeCap.Round)
+                    val strokeWidthPx = if (isAmbient) 1.5.dp.toPx() else 2.5.dp.toPx()
 
-                    if (!(isAmbient && isTimerRunning)) {
-                        // A) Archi laterali (Ore 9 e Ore 3) che scorrono da sotto la lunetta superiore a sotto il pulsante inferiore
-                        val leftColor = when {
-                            !showSideCrescents -> crescentPassiveColor
-                            isInitialState && !canDecrease -> crescentDisabledColor
-                            isLeftPressed -> crescentPressedColor
-                            else -> crescentSecondaryColor
-                        }
-                        val rightColor = when {
-                            !showSideCrescents -> crescentPassiveColor
-                            isRightPressed -> crescentPressedColor
-                            isPausedState || isOvertime -> crescentConfirmColor
-                            else -> crescentSecondaryColor
-                        }
-
-                        // Sinistra (Ore 9): da 115° (sotto l'incastro inferiore) fino a 250° (sotto l'incastro superiore)
-                        drawArc(
-                            color = leftColor,
-                            startAngle = 115f,
-                            sweepAngle = 135f,
-                            useCenter = false,
-                            topLeft = arcTopLeft,
-                            size = arcSize,
-                            style = segmentStroke
-                        )
-
-                        // Destra (Ore 3): da -70° (sotto l'incastro superiore) fino a +65° (sotto l'incastro inferiore)
-                        drawArc(
-                            color = rightColor,
-                            startAngle = -70f,
-                            sweepAngle = 135f,
-                            useCenter = false,
-                            topLeft = arcTopLeft,
-                            size = arcSize,
-                            style = segmentStroke
-                        )
-
-                        // B) Maschera e Lunetta Superiore (Ore 12 = 270°, da 240° a 300°) per l'orologio HH:mm
-                        drawArc(
-                            color = backgroundColor,
-                            startAngle = 240f,
-                            sweepAngle = 60f,
-                            useCenter = false,
-                            topLeft = arcTopLeft,
-                            size = arcSize,
-                            style = cutoutStroke
-                        )
-                        drawArc(
-                            color = crescentPassiveColor,
-                            startAngle = 240f,
-                            sweepAngle = 60f,
-                            useCenter = false,
-                            topLeft = arcTopLeft,
-                            size = arcSize,
-                            style = segmentStroke
-                        )
-
-                        // C) Maschera di scavo concavo (( )) attorno al pulsante inferiore
-                        drawArc(
-                            color = backgroundColor,
-                            startAngle = 54f,
-                            sweepAngle = 72f,
-                            useCenter = false,
-                            topLeft = arcTopLeft,
-                            size = arcSize,
-                            style = cutoutStroke
+                    // A) Bagliore radiale centrale molto soffuso (solo in modalità attiva, spento in Ambient)
+                    if (!isAmbient) {
+                        val glowAlpha = breathGlowAlphaState?.value ?: 0.10f
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    tertiaryColor.copy(alpha = glowAlpha),
+                                    primaryColor.copy(alpha = glowAlpha * 0.45f),
+                                    Color.Transparent
+                                ),
+                                center = centerOffset,
+                                radius = arcDiameter * 0.52f
+                            ),
+                            radius = arcDiameter * 0.52f,
+                            center = centerOffset
                         )
                     }
 
-                    // D) Pulsante inferiore (Ore 6 = 90°): da 54° a 126°, incastrato dentro i due archi laterali
-                    val bottomBaseColor = when {
-                        isAmbient && isTimerRunning -> Color.DarkGray.copy(alpha = 0.5f)
-                        isOvertime -> overtimeColor
-                        isTimerRunning -> crescentSecondaryColor
-                        else -> crescentPrimaryColor
-                    }
-                    val bottomColor = if (isBottomPressed) {
-                        bottomBaseColor.copy(alpha = 0.75f)
-                    } else {
-                        bottomBaseColor
-                    }
-
+                    // B) Traccia circolare sottile di fondo a 360°
                     drawArc(
-                        color = bottomColor,
-                        startAngle = 54f,
-                        sweepAngle = 72f,
+                        color = ringTrackColor,
+                        startAngle = 0f,
+                        sweepAngle = 360f,
                         useCenter = false,
                         topLeft = arcTopLeft,
                         size = arcSize,
-                        style = segmentStroke
+                        style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
                     )
-                }
 
-                // 2. OROLOGIO INCASTONATO NELLA LUNETTA SUPERIORE (Ore 12)
-                Text(
-                    text = currentClockText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isAmbient && isTimerRunning) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.offset(y = -crescentCenterOffset)
-                )
-
-                // 3. QUADRANTE CENTRALE DEL TIMER (più ampio, proporzionato allo schermo)
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(circleSize)
-                ) {
-                    if (isPreparing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.fillMaxSize(),
-                            color = prepColor,
-                            strokeWidth = 7.dp
-                        )
-                    } else if (isOvertime) {
-                        CircularProgressIndicator(
-                            progress = { 1f },
-                            modifier = Modifier.fillMaxSize(),
-                            color = overtimeColor,
-                            strokeWidth = 7.dp,
-                            strokeCap = StrokeCap.Round
-                        )
-                    } else if (selectedTimeInSeconds != -1) {
-                        CircularProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.fillMaxSize(),
-                            color = if (isAmbient && isTimerRunning) Color.White else MaterialTheme.colorScheme.primary,
-                            trackColor = if (isAmbient && isTimerRunning) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant,
-                            strokeWidth = 7.dp,
-                            strokeCap = StrokeCap.Round
-                        )
-                    } else {
-                        CircularProgressIndicator(
-                            progress = { 1f },
-                            modifier = Modifier.fillMaxSize(),
-                            color = if (isAmbient && isTimerRunning) Color.White else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                            strokeWidth = 5.dp
-                        )
+                    // C) Arco perimetrale di avanzamento
+                    val sweepAngle = when {
+                        isPreparing -> (prepTimeLeftSeconds.toFloat() / prepTimeSeconds.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f) * 360f
+                        isOvertime -> 360f
+                        selectedTimeInSeconds == -1 -> if (isTimerRunning) 360f else 0f
+                        else -> progress.coerceIn(0f, 1f) * 360f
                     }
 
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    val arcStroke = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+
+                    if (isAmbient) {
+                        // In Ambient: arco sottile monocromatico senza gradienti
+                        drawArc(
+                            color = Color.White,
+                            startAngle = -90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = false,
+                            topLeft = arcTopLeft,
+                            size = arcSize,
+                            style = arcStroke
+                        )
+                    } else if (isOvertime) {
+                        drawArc(
+                            color = overtimeColor,
+                            startAngle = -90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = false,
+                            topLeft = arcTopLeft,
+                            size = arcSize,
+                            style = arcStroke
+                        )
+                    } else if (isPreparing) {
+                        drawArc(
+                            color = prepColor,
+                            startAngle = -90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = false,
+                            topLeft = arcTopLeft,
+                            size = arcSize,
+                            style = arcStroke
+                        )
+                    } else if (sweepAngle > 0.5f) {
+                        // Sfumatura morbida tra primary e tertiary lungo il perimetro
+                        drawArc(
+                            brush = Brush.sweepGradient(
+                                colors = listOf(primaryColor, tertiaryColor, primaryColor),
+                                center = centerOffset
+                            ),
+                            startAngle = -90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = false,
+                            topLeft = arcTopLeft,
+                            size = arcSize,
+                            style = arcStroke
+                        )
+                    }
+                }
+
+                // 2. CONTENITORE INTERNO INSCRITTO (SAFE ZONE)
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = diameter * 0.10f, vertical = diameter * 0.11f),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Fascia superiore (Ore 12)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = currentClockText,
+                            fontSize = 10.sp,
+                            color = if (isAmbient) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            style = TextStyle(
+                                fontFeatureSettings = "tnum",
+                                fontWeight = FontWeight.Normal
+                            )
+                        )
                         Text(
                             text = when {
                                 isPreparing -> stringResource(R.string.text_prepare)
                                 isOvertime -> stringResource(R.string.status_extra)
                                 else -> stringResource(R.string.status_still)
                             },
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 1,
                             color = when {
                                 isPreparing -> prepColor
                                 isOvertime -> overtimeColor
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                             }
                         )
-                        Text(
-                            text = when {
-                                isPreparing -> "${prepTimeLeftSeconds}s"
-                                isOvertime -> "+${formatTime(overtimeSeconds)}"
-                                selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> "∞"
-                                else -> formatTime(timeLeftInSeconds)
-                            },
-                            fontSize = if (isOvertime) 26.sp else 30.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = when {
-                                isPreparing -> prepColor
-                                isOvertime -> overtimeColor
-                                else -> MaterialTheme.colorScheme.onBackground
-                            }
-                        )
+                    }
 
-                        // Indicatore orizzontale delle 2 pagine (Timer / Impostazioni) sotto il numero
-                        if (showSettingsPage) {
-                            Spacer(modifier = Modifier.height(6.dp))
+                    // Fascia centrale (Row)
+                    val sideBtnSize = (diameter * 0.145f).coerceIn(26.dp, 32.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        // Pulsante circolare [-]
+                        Box(
+                            modifier = Modifier.size(sideBtnSize),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (showSideControls && !isAmbient) {
+                                val leftEnabled = !isInitialState || canDecrease
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(sideBtnSize)
+                                        .background(primaryColor.copy(alpha = if (leftEnabled) 0.12f else 0.04f), CircleShape)
+                                        .border(1.dp, primaryColor.copy(alpha = if (leftEnabled) 0.40f else 0.15f), CircleShape)
+                                        .clickable(
+                                            enabled = leftEnabled,
+                                            indication = null,
+                                            interactionSource = remember { MutableInteractionSource() }
+                                        ) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            if (isInitialState) {
+                                                if (selectedTimeInSeconds > 60) {
+                                                    updateTimeSelection(selectedTimeInSeconds - 60)
+                                                } else if (selectedTimeInSeconds == 60) {
+                                                    updateTimeSelection(-1)
+                                                }
+                                            } else {
+                                                resetTimerState()
+                                            }
+                                        }
+                                ) {
+                                    Text(
+                                        text = if (isInitialState) "−" else "✕",
+                                        fontSize = if (isInitialState) 15.sp else 11.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = if (leftEnabled) primaryColor else primaryColor.copy(alpha = 0.3f)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Testo del timer MM:SS
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = when {
+                                    isPreparing -> "${prepTimeLeftSeconds}s"
+                                    isOvertime -> "+${formatTime(overtimeSeconds)}"
+                                    selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> "∞"
+                                    else -> formatTime(timeLeftInSeconds)
+                                },
+                                fontSize = if (isOvertime) (diameter.value * 0.135f).sp else (diameter.value * 0.155f).sp,
+                                maxLines = 1,
+                                softWrap = false,
+                                color = when {
+                                    isPreparing -> prepColor
+                                    isOvertime -> overtimeColor
+                                    isAmbient -> Color.White
+                                    else -> MaterialTheme.colorScheme.onBackground
+                                },
+                                style = TextStyle(
+                                    fontFeatureSettings = "tnum",
+                                    fontWeight = FontWeight.Light
+                                )
+                            )
+                        }
+
+                        // Pulsante circolare [+]
+                        Box(
+                            modifier = Modifier.size(sideBtnSize),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (showSideControls && !isAmbient) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(sideBtnSize)
+                                        .background(primaryColor.copy(alpha = 0.12f), CircleShape)
+                                        .border(1.dp, primaryColor.copy(alpha = 0.40f), CircleShape)
+                                        .clickable(
+                                            indication = null,
+                                            interactionSource = remember { MutableInteractionSource() }
+                                        ) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            if (isInitialState) {
+                                                updateTimeSelection(if (selectedTimeInSeconds == -1) 60 else selectedTimeInSeconds + 60)
+                                            } else {
+                                                saveAndFinishSession(includeExtra = false)
+                                            }
+                                        }
+                                ) {
+                                    Text(
+                                        text = if (isInitialState) "+" else "✓",
+                                        fontSize = if (isInitialState) 15.sp else 12.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = primaryColor
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Fascia inferiore (Ore 6)
+                    val bottomPillColor = when {
+                        isAmbient -> Color.Transparent
+                        isOvertime -> overtimeColor
+                        isTimerRunning -> MaterialTheme.colorScheme.secondary
+                        else -> primaryColor
+                    }
+                    val bottomPillTextColor = when {
+                        isAmbient -> Color.White.copy(alpha = 0.8f)
+                        isOvertime -> Color.Black
+                        isTimerRunning -> MaterialTheme.colorScheme.onSecondary
+                        else -> MaterialTheme.colorScheme.onPrimary
+                    }
+                    val pillWidth = (diameter * 0.46f).coerceIn(82.dp, 104.dp)
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Indicatore orizzontale delle 2 pagine (Timer / Impostazioni)
+                        if (showSettingsPage && !isAmbient) {
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 repeat(2) { index ->
                                     val selected = pagerState.currentPage == index
                                     Box(
                                         modifier = Modifier
-                                            .size(if (selected) 6.dp else 4.dp)
+                                            .size(if (selected) 5.dp else 3.5.dp)
                                             .background(
-                                                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                                if (selected) primaryColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
                                                 CircleShape
                                             )
                                     )
                                 }
                             }
+                            Spacer(modifier = Modifier.height(4.dp))
                         }
-                    }
-                }
 
-                // 4. AREE DI TOCCO ED ETICHETTE DELLE 3 MEZZE LUNE
-                if (showSideCrescents) {
-                    // Mezza Luna Sinistra (Ore 9): [−] a timer fermo, [✕] (Reset) in Pausa o Extra
-                    val leftEnabled = !isInitialState || canDecrease
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .offset(x = -crescentCenterOffset)
-                            .size(width = crescentThicknessDp + 10.dp, height = 96.dp)
-                            .clickable(
-                                enabled = leftEnabled,
-                                indication = null,
-                                interactionSource = leftInteractionSource
-                            ) {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                if (isInitialState) {
-                                    if (selectedTimeInSeconds > 60) {
-                                        updateTimeSelection(selectedTimeInSeconds - 60)
-                                    } else if (selectedTimeInSeconds == 60) {
-                                        updateTimeSelection(-1)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(width = pillWidth, height = 28.dp)
+                                .then(
+                                    if (isAmbient) {
+                                        Modifier.border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                                    } else {
+                                        Modifier
+                                            .background(bottomPillColor, RoundedCornerShape(14.dp))
+                                            .border(1.dp, bottomPillColor.copy(alpha = 0.8f), RoundedCornerShape(14.dp))
                                     }
-                                } else {
-                                    // Reset da Pausa o da Extra
-                                    resetTimerState()
+                                )
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() }
+                                ) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    if (isOvertime) {
+                                        saveAndFinishSession(includeExtra = true)
+                                    } else {
+                                        if (!isTimerRunning && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                            }
+                                        }
+                                        isTimerRunning = !isTimerRunning
+                                    }
                                 }
-                            }
-                    ) {
-                        Text(
-                            text = if (isInitialState) "−" else "✕",
-                            fontSize = if (isInitialState) 18.sp else 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (leftEnabled) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            }
-                        )
-                    }
-
-                    // Mezza Luna Destra (Ore 3): [+] a timer fermo, [✓] (Salva previsto) in Pausa o Extra
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .offset(x = crescentCenterOffset)
-                            .size(width = crescentThicknessDp + 10.dp, height = 96.dp)
-                            .clickable(
-                                indication = null,
-                                interactionSource = rightInteractionSource
-                            ) {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                if (isInitialState) {
-                                    updateTimeSelection(if (selectedTimeInSeconds == -1) 60 else selectedTimeInSeconds + 60)
-                                } else {
-                                    saveAndFinishSession(includeExtra = false)
-                                }
-                            }
-                    ) {
-                        Text(
-                            text = if (isInitialState) "+" else "✓",
-                            fontSize = if (isInitialState) 18.sp else 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isInitialState) {
-                                MaterialTheme.colorScheme.onSecondaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSecondary
-                            }
-                        )
-                    }
-                }
-
-                // Mezza Luna Inferiore (Ore 6): [Inizia] / [Pausa] / [Riprendi] / [Salva +Xm]
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .offset(y = crescentCenterOffset)
-                        .size(width = 108.dp, height = crescentThicknessDp + 10.dp)
-                        .clickable(
-                            indication = null,
-                            interactionSource = bottomInteractionSource
                         ) {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            if (isOvertime) {
-                                saveAndFinishSession(includeExtra = true)
-                            } else {
-                                if (!isTimerRunning && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    }
-                                }
-                                isTimerRunning = !isTimerRunning
+                            val bottomText = when {
+                                isOvertime -> stringResource(R.string.button_save_extra, (overtimeSeconds / 60))
+                                isTimerRunning -> stringResource(R.string.button_pause)
+                                !isInitialState -> stringResource(R.string.button_resume)
+                                else -> stringResource(R.string.button_start)
                             }
+                            Text(
+                                text = bottomText,
+                                fontSize = if (isOvertime || (!isInitialState && !isTimerRunning)) 10.sp else 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                color = bottomPillTextColor
+                            )
                         }
-                ) {
-                    val bottomText = when {
-                        isOvertime -> stringResource(R.string.button_save_extra, (overtimeSeconds / 60))
-                        isTimerRunning -> stringResource(R.string.button_pause)
-                        !isInitialState -> stringResource(R.string.button_resume)
-                        else -> stringResource(R.string.button_start)
                     }
-                    val bottomTextColor = when {
-                        isAmbient && isTimerRunning -> Color.White.copy(alpha = 0.8f)
-                        isOvertime -> Color.Black
-                        isTimerRunning -> MaterialTheme.colorScheme.onSecondaryContainer
-                        else -> MaterialTheme.colorScheme.onPrimary
-                    }
-                    Text(
-                        text = bottomText,
-                        fontSize = if (isOvertime || (!isInitialState && !isTimerRunning)) 11.sp else 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        color = bottomTextColor
-                    )
                 }
             } else {
                 // ================= PAGINA 2: IMPOSTAZIONI (2 pagine fisse in verticale + rotella) =================
@@ -1022,11 +1057,13 @@ fun WearMeditationApp(
                                                         previewGongJob?.cancel()
                                                     }
                                                 },
+                                                shape = RoundedCornerShape(13.dp),
+                                                border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
                                                 modifier = Modifier.height(26.dp),
                                                 contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
                                                 colors = ButtonDefaults.buttonColors(
-                                                    containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                                    contentColor = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                                    contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                             ) {
                                                 Text(
@@ -1077,11 +1114,15 @@ fun WearMeditationApp(
                                                             playPreviewGong(freq, gongVolumePercent)
                                                         },
                                                         enabled = isSoundEnabled,
+                                                        shape = RoundedCornerShape(13.dp),
+                                                        border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (isSoundEnabled) 0.35f else 0.15f)),
                                                         modifier = Modifier.height(26.dp),
                                                         contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
                                                         colors = ButtonDefaults.buttonColors(
-                                                            containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                                            contentColor = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isSoundEnabled) 0.25f else 0.10f),
+                                                            contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isSoundEnabled) 1f else 0.4f),
+                                                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
+                                                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                                                         )
                                                     ) {
                                                         Text(
@@ -1110,7 +1151,7 @@ fun WearMeditationApp(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        OutlinedButton(
+                                        Button(
                                             onClick = {
                                                 if (gongVolumePercent > 20) {
                                                     val newVol = (gongVolumePercent - 20).coerceAtLeast(20)
@@ -1120,8 +1161,16 @@ fun WearMeditationApp(
                                                 }
                                             },
                                             enabled = isSoundEnabled && gongVolumePercent > 20,
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (isSoundEnabled && gongVolumePercent > 20) 0.35f else 0.15f)),
                                             modifier = Modifier.size(width = 38.dp, height = 25.dp),
-                                            contentPadding = PaddingValues(0.dp)
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isSoundEnabled && gongVolumePercent > 20) 0.25f else 0.10f),
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
+                                                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                            )
                                         ) {
                                             Text("−", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                         }
@@ -1130,10 +1179,11 @@ fun WearMeditationApp(
                                             text = "$gongVolumePercent%",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
+                                            style = TextStyle(fontFeatureSettings = "tnum"),
                                             color = if (isSoundEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                                         )
 
-                                        OutlinedButton(
+                                        Button(
                                             onClick = {
                                                 if (gongVolumePercent < 100) {
                                                     val newVol = (gongVolumePercent + 20).coerceAtMost(100)
@@ -1143,8 +1193,16 @@ fun WearMeditationApp(
                                                 }
                                             },
                                             enabled = isSoundEnabled && gongVolumePercent < 100,
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (isSoundEnabled && gongVolumePercent < 100) 0.35f else 0.15f)),
                                             modifier = Modifier.size(width = 38.dp, height = 25.dp),
-                                            contentPadding = PaddingValues(0.dp)
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isSoundEnabled && gongVolumePercent < 100) 0.25f else 0.10f),
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
+                                                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                            )
                                         ) {
                                             Text("+", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                         }
@@ -1191,7 +1249,7 @@ fun WearMeditationApp(
                                             Box(
                                                 contentAlignment = Alignment.Center,
                                                 modifier = Modifier
-                                                    .size(30.dp)
+                                                    .size(32.dp)
                                                     .clickable(
                                                         indication = null,
                                                         interactionSource = remember { MutableInteractionSource() }
@@ -1200,13 +1258,20 @@ fun WearMeditationApp(
                                                         onPaletteSelected(palette)
                                                     }
                                             ) {
+                                                if (isSelected) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(30.dp)
+                                                            .background(palette.swatchColor.copy(alpha = 0.22f), CircleShape)
+                                                    )
+                                                }
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(if (isSelected) 25.dp else 21.dp)
+                                                        .size(if (isSelected) 22.dp else 18.dp)
                                                         .background(palette.swatchColor, CircleShape)
                                                         .border(
-                                                            width = if (isSelected) 2.2.dp else 1.dp,
-                                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.outline,
+                                                            width = if (isSelected) 2.dp else 1.dp,
+                                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.outline.copy(alpha = 0.40f),
                                                             shape = CircleShape
                                                         )
                                                 )
@@ -1227,7 +1292,7 @@ fun WearMeditationApp(
                                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        OutlinedButton(
+                                        Button(
                                             onClick = {
                                                 if (prepTimeSeconds >= 5) {
                                                     prepTimeSeconds -= 5
@@ -1235,8 +1300,16 @@ fun WearMeditationApp(
                                                 }
                                             },
                                             enabled = prepTimeSeconds >= 5,
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (prepTimeSeconds >= 5) 0.35f else 0.15f)),
                                             modifier = Modifier.size(width = 44.dp, height = 26.dp),
-                                            contentPadding = PaddingValues(0.dp)
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (prepTimeSeconds >= 5) 0.25f else 0.10f),
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
+                                                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                            )
                                         ) {
                                             Text("-5s", fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                         }
@@ -1245,16 +1318,23 @@ fun WearMeditationApp(
                                             text = "${prepTimeSeconds}s",
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold,
+                                            style = TextStyle(fontFeatureSettings = "tnum"),
                                             color = prepColor
                                         )
 
-                                        OutlinedButton(
+                                        Button(
                                             onClick = {
                                                 prepTimeSeconds += 5
                                                 savePrepTime(context, prepTimeSeconds)
                                             },
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
                                             modifier = Modifier.size(width = 44.dp, height = 26.dp),
-                                            contentPadding = PaddingValues(0.dp)
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         ) {
                                             Text("+5s", fontSize = 10.sp, fontWeight = FontWeight.Medium)
                                         }

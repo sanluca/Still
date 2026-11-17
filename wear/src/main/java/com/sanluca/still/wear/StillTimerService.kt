@@ -9,6 +9,9 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
+import androidx.core.app.NotificationCompat
+import androidx.wear.ongoing.OngoingActivity
+import androidx.wear.ongoing.Status
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,6 +31,11 @@ class StillTimerService : Service() {
         var isServiceRunning = false
         private const val WAKELOCK_MARGIN_MS = 15 * 60 * 1000L
         private const val WAKELOCK_RENEW_SEC = 10 * 60
+
+        private const val CHANNEL_ID_TIMER = "still_wear_timer"
+        private const val CHANNEL_ID_ALARM = "still_wear_alarm"
+        private const val NOTIFICATION_ID_TIMER = 1
+        private const val NOTIFICATION_ID_ALARM = 2
 
         const val ACTION_START = "START"
         const val ACTION_STOP = "STOP"
@@ -53,9 +61,15 @@ class StillTimerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val channel = NotificationChannel("still_wear_timer", getString(R.string.app_name), NotificationManager.IMPORTANCE_LOW)
+        val channel = NotificationChannel(CHANNEL_ID_TIMER, getString(R.string.app_name), NotificationManager.IMPORTANCE_LOW)
+        val alarmChannel = NotificationChannel(CHANNEL_ID_ALARM, getString(R.string.app_name), NotificationManager.IMPORTANCE_HIGH).apply {
+            // Il suono e la vibrazione sono gestiti dal gong del timer: il canale serve solo al full-screen intent
+            setSound(null, null)
+            enableVibration(false)
+        }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(channel)
+        manager.createNotificationChannel(alarmChannel)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -69,17 +83,27 @@ class StillTimerService : Service() {
             val isOvertimeStart = intent.getBooleanExtra(EXTRA_IS_OVERTIME, false)
             val overtimeSecsStart = intent.getIntExtra(EXTRA_OVERTIME_SECONDS, 0)
 
-            val notificationIntent = Intent(this, MainActivity::class.java)
-            val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE)
-            val notification = Notification.Builder(this, "still_wear_timer")
+            val notificationIntent = Intent(this, MainActivity::class.java).apply {
+                setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            }
+            val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID_TIMER)
                 .setContentTitle(getString(R.string.status_timer))
                 .setContentText(getString(R.string.status_still))
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentIntent(pendingIntent)
+                .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
                 .setOngoing(true)
-                .build()
 
-            startForeground(1, notification)
+            // Ongoing Activity: chip attivo sul quadrante e voce nei recenti per rientrare nel timer
+            OngoingActivity.Builder(applicationContext, NOTIFICATION_ID_TIMER, notificationBuilder)
+                .setStaticIcon(R.mipmap.ic_launcher)
+                .setTouchIntent(pendingIntent)
+                .setStatus(Status.Builder().addTemplate(getString(R.string.status_timer)).build())
+                .build()
+                .apply(applicationContext)
+
+            startForeground(NOTIFICATION_ID_TIMER, notificationBuilder.build())
             startTimer(freq, selectedTime, prepTime, isOvertimeStart, overtimeSecsStart, initialTime, alertMode, gongVolume)
         } else if (intent?.action == ACTION_STOP) {
             stopTimer()
@@ -127,13 +151,16 @@ class StillTimerService : Service() {
         }
         acquireWakeLock(wakeLockTimeoutMs)
 
+        // In modalità senza limiti (-1) il conteggio parte da 0 (il valore -1 è solo un marcatore)
+        val baseTimeLeft = if (initialSelectedTime == -1) startingTimeLeft.coerceAtLeast(0) else startingTimeLeft
+
         timerJob = serviceScope.launch {
             try {
                 // 1. CONTO ALLA ROVESCIA DI PREPARAZIONE
                 var prepLeft = prepTimeSeconds
                 if (prepLeft > 0) {
                     while (prepLeft > 0 && isTimerRunning) {
-                        broadcastState(true, prepLeft, startingTimeLeft, false, 0, initialSelectedTime)
+                        broadcastState(true, prepLeft, baseTimeLeft, false, 0, initialSelectedTime)
                         delay(1000L)
                         prepLeft -= 1
                     }
@@ -155,7 +182,7 @@ class StillTimerService : Service() {
                 }
 
                 val startRealtime = SystemClock.elapsedRealtime()
-                var timeLeft = startingTimeLeft
+                var timeLeft = baseTimeLeft
                 var isOvertime = isOvertimeStart
                 var overtimeSec = overtimeSecsStart
                 var lastWakeLockRenewSec = 0
@@ -172,7 +199,7 @@ class StillTimerService : Service() {
                     }
 
                     if (initialSelectedTime == -1) {
-                        timeLeft = startingTimeLeft + elapsedSeconds
+                        timeLeft = baseTimeLeft + elapsedSeconds
                     } else if (!isOvertime) {
                         val remaining = startingTimeLeft - elapsedSeconds
                         if (remaining > 0) {
@@ -193,11 +220,28 @@ class StillTimerService : Service() {
                             }
 
                             // Risveglia e riporta in primo piano la schermata con i pulsanti per salvare
+                            // (full-screen intent: l'avvio diretto di Activity dal background è bloccato dal sistema)
                             try {
                                 val openAppIntent = Intent(this@StillTimerService, MainActivity::class.java).apply {
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                                 }
-                                startActivity(openAppIntent)
+                                val fullScreenPendingIntent = PendingIntent.getActivity(
+                                    this@StillTimerService,
+                                    1,
+                                    openAppIntent,
+                                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                                )
+                                val alarmNotification = Notification.Builder(this@StillTimerService, CHANNEL_ID_ALARM)
+                                    .setContentTitle(getString(R.string.status_timer))
+                                    .setContentText(getString(R.string.status_extra))
+                                    .setSmallIcon(android.R.drawable.ic_media_play)
+                                    .setCategory(Notification.CATEGORY_ALARM)
+                                    .setContentIntent(fullScreenPendingIntent)
+                                    .setFullScreenIntent(fullScreenPendingIntent, true)
+                                    .setAutoCancel(true)
+                                    .build()
+                                getSystemService(NotificationManager::class.java)
+                                    .notify(NOTIFICATION_ID_ALARM, alarmNotification)
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
@@ -223,6 +267,7 @@ class StillTimerService : Service() {
         gongJob?.cancel()
         gongJob = null
         cancelGongVibration(this)
+        getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID_ALARM)
         releaseWakeLock()
     }
 

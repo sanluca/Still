@@ -68,9 +68,13 @@
     <string name="stats_streak">Streak</string>
     <string name="stats_min_format">%1$d min</string>
     <string name="stats_streak_format">%1$d d</string>
-    <string name="stats_history_title">Meditation History:</string>
+    <string name="stats_best_streak_format">Best: %1$d d</string>
+    <string name="stats_history_title">Meditation Calendar</string>
     <string name="stats_history_empty">No sessions recorded yet. Complete a meditation!</string>
     <string name="stats_history_item">%1$d minutes</string>
+    <string name="stats_session_time_range">%1$s – %2$s</string>
+    <string name="stats_day_total_summary">%1$d sessions • %2$d min total</string>
+    <string name="stats_day_single_summary">1 session • %1$d min total</string>
     <string name="dialog_delete_title">Delete Meditation</string>
     <string name="dialog_delete_message">Do you really want to delete the %1$d min session on %2$s from both the app and Google Health Connect?</string>
     <string name="button_delete">Delete</string>

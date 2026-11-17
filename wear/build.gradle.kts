@@ -17,6 +17,10 @@ android {
         versionName = libs.versions.appVersion.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            debugSymbolLevel = "FULL"
+        }
     }
 
     val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -67,6 +71,7 @@ dependencies {
 
     // Wear OS & Google Play Services Wearable Data Layer
     implementation("androidx.wear:wear:1.3.0")
+    implementation("androidx.wear:wear-ongoing:1.0.0")
     implementation("androidx.fragment:fragment-ktx:1.8.1")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
 

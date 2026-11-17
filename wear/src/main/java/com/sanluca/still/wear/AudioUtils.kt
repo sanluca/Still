@@ -137,7 +137,8 @@ suspend fun playGongSound(
             .build()
 
         audioTrack.write(buffer, 0, numSamples)
-        audioTrack.setVolume(normalizedVol.toFloat())
+        // La curva quadratica è già applicata nel segnale (amplitudeGain): niente doppia attenuazione
+        audioTrack.setVolume(1.0f)
 
         for (count in 1..repeatCount) {
             audioTrack.stop()

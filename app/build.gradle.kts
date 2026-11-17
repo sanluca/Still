@@ -17,6 +17,10 @@ android {
         versionName = libs.versions.appVersion.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            debugSymbolLevel = "FULL"
+        }
     }
 
     val keystorePropertiesFile = rootProject.file("keystore.properties")

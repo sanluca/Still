@@ -147,8 +147,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
+import java.time.DayOfWeek
 import java.time.Instant
-import java.util.Calendar
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.time.format.TextStyle as JavaTextStyle
 import java.util.Date
 import java.util.Locale
 
@@ -172,6 +178,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Se il processo è stato terminato durante una sessione con DND automatico, ripristina il filtro salvato
+        if (!StillTimerService.isRunning) {
+            disableDoNotDisturb(this)
+        }
         showHealthRationaleState.value = checkIsHealthRationale(intent)
         appUpdateManager = AppUpdateManagerFactory.create(this)
         appUpdateManager.registerListener(installStateUpdatedListener)
@@ -300,6 +310,9 @@ private const val KEY_COLOR_PALETTE = "color_palette"
 private const val KEY_HEALTH_CONNECTED = "health_connected"
 private const val KEY_SESSION_HISTORY = "session_history_list"
 private const val KEY_PENDING_HEALTH_SESSIONS = "pending_health_sessions"
+
+// Lock condiviso da MainActivity e WearListenerService per i read-modify-write su storico e coda Health Connect
+private val historyPrefsLock = Any()
 
 data class SessionLogEntry(
     val id: Long,
@@ -453,11 +466,13 @@ fun isHealthConnectedStateSaved(context: Context): Boolean {
 
 fun savePendingWatchSession(context: Context, durationSec: Int, startInstant: Instant, endInstant: Instant) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    val existingSet = prefs.getStringSet(KEY_PENDING_HEALTH_SESSIONS, emptySet()) ?: emptySet()
-    val raw = "$durationSec|${startInstant.epochSecond}|${endInstant.epochSecond}"
-    val updatedSet = existingSet.toMutableSet()
-    updatedSet.add(raw)
-    prefs.edit().putStringSet(KEY_PENDING_HEALTH_SESSIONS, updatedSet).apply()
+    synchronized(historyPrefsLock) {
+        val existingSet = prefs.getStringSet(KEY_PENDING_HEALTH_SESSIONS, emptySet()) ?: emptySet()
+        val raw = "$durationSec|${startInstant.epochSecond}|${endInstant.epochSecond}"
+        val updatedSet = existingSet.toMutableSet()
+        updatedSet.add(raw)
+        prefs.edit().putStringSet(KEY_PENDING_HEALTH_SESSIONS, updatedSet).apply()
+    }
 }
 
 fun getPendingWatchSessions(context: Context): List<PendingSessionEntry> {
@@ -476,10 +491,12 @@ fun getPendingWatchSessions(context: Context): List<PendingSessionEntry> {
 
 fun clearPendingWatchSessions(context: Context, rawList: List<String>) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    val existingSet = prefs.getStringSet(KEY_PENDING_HEALTH_SESSIONS, emptySet()) ?: emptySet()
-    val updatedSet = existingSet.toMutableSet()
-    updatedSet.removeAll(rawList.toSet())
-    prefs.edit().putStringSet(KEY_PENDING_HEALTH_SESSIONS, updatedSet).apply()
+    synchronized(historyPrefsLock) {
+        val existingSet = prefs.getStringSet(KEY_PENDING_HEALTH_SESSIONS, emptySet()) ?: emptySet()
+        val updatedSet = existingSet.toMutableSet()
+        updatedSet.removeAll(rawList.toSet())
+        prefs.edit().putStringSet(KEY_PENDING_HEALTH_SESSIONS, updatedSet).apply()
+    }
 }
 
 private val pendingSyncMutex = Mutex()
@@ -522,7 +539,6 @@ suspend fun resyncHistoryToHealthConnect(context: Context, healthConnectManager:
 
 fun addSessionToLocalHistory(context: Context, durationSeconds: Int, startInstant: Instant, endInstant: Instant) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    val existingSet = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
     
     val timestamp = startInstant.toEpochMilli()
     val minutes = (durationSeconds / 60).coerceAtLeast(1)
@@ -530,17 +546,22 @@ fun addSessionToLocalHistory(context: Context, durationSeconds: Int, startInstan
     val endSec = endInstant.epochSecond
     val newEntry = "$timestamp|$minutes|$startSec|$endSec"
     
-    val updatedSet = existingSet.toMutableSet()
-    updatedSet.add(newEntry)
-    prefs.edit().putStringSet(KEY_SESSION_HISTORY, updatedSet).apply()
+    synchronized(historyPrefsLock) {
+        val existingSet = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
+        val updatedSet = existingSet.toMutableSet()
+        updatedSet.add(newEntry)
+        prefs.edit().putStringSet(KEY_SESSION_HISTORY, updatedSet).apply()
+    }
 }
 
 fun deleteSessionFromLocalHistory(context: Context, rawString: String) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    val existingSet = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
-    val updatedSet = existingSet.toMutableSet()
-    updatedSet.remove(rawString)
-    prefs.edit().putStringSet(KEY_SESSION_HISTORY, updatedSet).apply()
+    synchronized(historyPrefsLock) {
+        val existingSet = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
+        val updatedSet = existingSet.toMutableSet()
+        updatedSet.remove(rawString)
+        prefs.edit().putStringSet(KEY_SESSION_HISTORY, updatedSet).apply()
+    }
 }
 
 fun getLocalSessionHistory(context: Context): List<SessionLogEntry> {
@@ -570,35 +591,52 @@ fun getLocalSessionHistory(context: Context): List<SessionLogEntry> {
 
 fun calculateStreakDays(history: List<SessionLogEntry>): Int {
     if (history.isEmpty()) return 0
-    
-    val calendar = Calendar.getInstance()
-    val sessionDays = history.map {
-        calendar.timeInMillis = it.startEpochSec * 1000L
-        val year = calendar.get(Calendar.YEAR)
-        val day = calendar.get(Calendar.DAY_OF_YEAR)
-        "$year-$day"
-    }.distinct()
+
+    val zone = ZoneId.systemDefault()
+    val sessionDates = history.mapTo(HashSet()) {
+        Instant.ofEpochSecond(it.startEpochSec).atZone(zone).toLocalDate()
+    }
 
     var streak = 0
-    val todayCal = Calendar.getInstance()
-    
-    for (i in 0..365) {
-        val y = todayCal.get(Calendar.YEAR)
-        val d = todayCal.get(Calendar.DAY_OF_YEAR)
-        val key = "$y-$d"
-        
-        if (sessionDays.contains(key)) {
-            streak++
-            todayCal.add(Calendar.DAY_OF_YEAR, -1)
-        } else {
-            if (i == 0) {
-                todayCal.add(Calendar.DAY_OF_YEAR, -1)
-                continue
-            }
-            break
-        }
+    var currentDate = LocalDate.now(zone)
+
+    // Se oggi non si è ancora meditato, partiamo a verificare da ieri senza interrompere la striscia
+    if (!sessionDates.contains(currentDate)) {
+        currentDate = currentDate.minusDays(1)
+    }
+
+    while (sessionDates.contains(currentDate)) {
+        streak++
+        currentDate = currentDate.minusDays(1)
     }
     return streak
+}
+
+fun calculateBestStreakDays(history: List<SessionLogEntry>): Int {
+    if (history.isEmpty()) return 0
+
+    val zone = ZoneId.systemDefault()
+    val sortedDates = history
+        .map { Instant.ofEpochSecond(it.startEpochSec).atZone(zone).toLocalDate() }
+        .distinct()
+        .sorted()
+
+    if (sortedDates.isEmpty()) return 0
+
+    var bestStreak = 1
+    var currentStreak = 1
+
+    for (i in 1 until sortedDates.size) {
+        if (sortedDates[i] == sortedDates[i - 1].plusDays(1)) {
+            currentStreak++
+            if (currentStreak > bestStreak) {
+                bestStreak = currentStreak
+            }
+        } else {
+            currentStreak = 1
+        }
+    }
+    return bestStreak
 }
 
 fun isDndPermissionGranted(context: Context): Boolean {
@@ -684,6 +722,7 @@ fun MeditationTimerScreen(
     var showSettingsDialog by remember { mutableStateOf(false) }
     var isResyncing by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
+    var selectedCalendarDate by remember { mutableStateOf<LocalDate?>(null) }
     var sessionToDelete by remember { mutableStateOf<SessionLogEntry?>(null) }
     
     var sessionHistoryList by remember { mutableStateOf(getLocalSessionHistory(context)) }
@@ -710,6 +749,28 @@ fun MeditationTimerScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    // Aggiornamento live: sessioni in arrivo dall'orologio (WearListenerService) mentre l'app è aperta
+    DisposableEffect(context, lifecycleOwner) {
+        val livePrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_SESSION_HISTORY) {
+                sessionHistoryList = getLocalSessionHistory(context)
+            } else if (key == KEY_PENDING_HEALTH_SESSIONS &&
+                lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            ) {
+                coroutineScope.launch {
+                    if (healthConnectManager.hasAllPermissions()) {
+                        syncPendingSessionsToHealthConnect(context, healthConnectManager)
+                    }
+                }
+            }
+        }
+        livePrefs.registerOnSharedPreferenceChangeListener(prefsListener)
+        onDispose {
+            livePrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         }
     }
 
@@ -875,10 +936,39 @@ fun MeditationTimerScreen(
     LaunchedEffect(isTimerRunning) {
         if (isTimerRunning) {
             try {
+                var serviceStartedDuringPrep = false
+                fun buildFreshStartIntent(prepSeconds: Int): Intent =
+                    Intent(context, StillTimerService::class.java).apply {
+                        action = "START"
+                        putExtra("FREQ", gongFreqHz)
+                        putExtra("INTERVAL_FREQ", intervalGongFreqHz)
+                        putExtra("VOLUME", gongVolumePercent)
+                        putExtra("ALERT_MODE", alertMode)
+                        putExtra("INTERVAL", intervalMins)
+                        putExtra("TIME", selectedTimeInSeconds)
+                        putExtra("PREP", prepSeconds)
+                        putExtra("DND", autoDndEnabled)
+                    }
+
                 // --- 1. CONTO ALLA ROVESCIA DI PREPARAZIONE ---
                 if (sessionStartTime == null && prepTimeSeconds > 0) {
                     isPreparing = true
                     prepTimeLeftSeconds = prepTimeSeconds
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                    // Il service (foreground + WakeLock) parte subito e conta anche la preparazione:
+                    // blocco schermo o app in background non congelano più il conto alla rovescia
+                    serviceStartedDuringPrep = try {
+                        context.startForegroundService(buildFreshStartIntent(prepTimeSeconds))
+                        true
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        false
+                    }
                     
                     while (prepTimeLeftSeconds > 0 && isTimerRunning) {
                         delay(1000L)
@@ -895,23 +985,20 @@ fun MeditationTimerScreen(
                     sessionStartTime = Instant.now()
                     activeSessionPlannedSeconds = selectedTimeInSeconds
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    if (!serviceStartedDuringPrep) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+
+                        try {
+                            context.startForegroundService(buildFreshStartIntent(0))
+                        } catch (e: Exception) {
+                            // Avvio da background non consentito: il timer continua comunque nella UI
+                            e.printStackTrace()
                         }
                     }
-
-                    val serviceIntent = Intent(context, StillTimerService::class.java).apply {
-                        action = "START"
-                        putExtra("FREQ", gongFreqHz)
-                        putExtra("INTERVAL_FREQ", intervalGongFreqHz)
-                        putExtra("VOLUME", gongVolumePercent)
-                        putExtra("ALERT_MODE", alertMode)
-                        putExtra("INTERVAL", intervalMins)
-                        putExtra("TIME", activeSessionPlannedSeconds)
-                        putExtra("DND", autoDndEnabled)
-                    }
-                    context.startForegroundService(serviceIntent)
                 } else {
                     // Ripresa dopo pausa (alla pausa il service è stato fermato): riparte dal tempo rimanente
                     val elapsedBeforePause = if (activeSessionPlannedSeconds == -1) {
@@ -2375,11 +2462,22 @@ fun MeditationTimerScreen(
             )
         }
 
-        // --- DIALOG STATISTICHE E STORICO CON CANCELLAZIONE ---
+        // --- DIALOG STATISTICHE E CALENDARIO CON CANCELLAZIONE ---
         if (showStatsDialog) {
             val totalMinutes = sessionHistoryList.sumOf { it.durationMinutes }
             val totalSessions = sessionHistoryList.size
             val streak = calculateStreakDays(sessionHistoryList)
+            val bestStreak = calculateBestStreakDays(sessionHistoryList)
+            val zone = remember { ZoneId.systemDefault() }
+            val locale = Locale.getDefault()
+
+            val sessionsByDate = remember(sessionHistoryList, zone) {
+                sessionHistoryList.groupBy {
+                    Instant.ofEpochSecond(it.startEpochSec).atZone(zone).toLocalDate()
+                }
+            }
+
+            var displayedYearMonth by remember { mutableStateOf(YearMonth.now(zone)) }
 
             AlertDialog(
                 onDismissRequest = { showStatsDialog = false },
@@ -2393,21 +2491,30 @@ fun MeditationTimerScreen(
                     )
                 },
                 text = @Composable {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(IntrinsicSize.Min),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Card(
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
                             ) {
                                 Column(
                                     modifier = Modifier
-                                        .fillMaxWidth()
+                                        .fillMaxSize()
                                         .padding(10.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
                                     Text(stringResource(R.string.stats_minutes), style = MaterialTheme.typography.labelMedium)
                                     Text(stringResource(R.string.stats_min_format, totalMinutes), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
@@ -2415,15 +2522,18 @@ fun MeditationTimerScreen(
                             }
 
                             Card(
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                             ) {
                                 Column(
                                     modifier = Modifier
-                                        .fillMaxWidth()
+                                        .fillMaxSize()
                                         .padding(10.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
                                     Text(stringResource(R.string.stats_sessions), style = MaterialTheme.typography.labelMedium)
                                     Text("$totalSessions", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
@@ -2431,87 +2541,215 @@ fun MeditationTimerScreen(
                             }
 
                             Card(
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight(),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
                             ) {
                                 Column(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(10.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                        .fillMaxSize()
+                                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
                                     Text(stringResource(R.string.stats_streak), style = MaterialTheme.typography.labelMedium)
                                     Text(stringResource(R.string.stats_streak_format, streak), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                    Text(
+                                        text = stringResource(R.string.stats_best_streak_format, bestStreak),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f),
+                                        maxLines = 1
+                                    )
                                 }
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
-                        Text(
-                            text = stringResource(R.string.stats_history_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        if (sessionHistoryList.isEmpty()) {
-                            Card(
-                                shape = RoundedCornerShape(14.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.stats_history_empty),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(16.dp)
-                                )
-                            }
-                        } else {
-                            LazyColumn(
+                        // --- CALENDARIO MENSILE ---
+                        Card(
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(max = 240.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    .padding(horizontal = 10.dp, vertical = 10.dp)
                             ) {
-                                items(sessionHistoryList) { session ->
-                                    Card(
-                                        shape = RoundedCornerShape(14.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Column {
-                                                Text(
-                                                    text = stringResource(R.string.stats_history_item, session.durationMinutes),
-                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = session.dateFormatted,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
+                                // Barra di navigazione < Mese Anno >
+                                val monthTitle = remember(displayedYearMonth, locale) {
+                                    val mName = displayedYearMonth.month
+                                        .getDisplayName(JavaTextStyle.FULL_STANDALONE, locale)
+                                        .replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
+                                    "$mName ${displayedYearMonth.year}"
+                                }
 
-                                            IconButton(
-                                                onClick = { sessionToDelete = session },
-                                                modifier = Modifier.size(34.dp)
-                                            ) {
-                                                Text("✕", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(
+                                        onClick = { displayedYearMonth = displayedYearMonth.minusMonths(1) },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Text(
+                                            text = "‹",
+                                            fontSize = 22.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    Text(
+                                        text = monthTitle,
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+
+                                    IconButton(
+                                        onClick = { displayedYearMonth = displayedYearMonth.plusMonths(1) },
+                                        modifier = Modifier.size(34.dp)
+                                    ) {
+                                        Text(
+                                            text = "›",
+                                            fontSize = 22.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Intestazione Giorni della Settimana (Lun - Dom)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    DayOfWeek.entries.forEach { dow ->
+                                        val label = dow
+                                            .getDisplayName(JavaTextStyle.SHORT_STANDALONE, locale)
+                                            .take(3)
+                                            .replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
+                                        Box(
+                                            modifier = Modifier.weight(1f),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Griglia 7 colonne dei giorni del mese
+                                val firstOfMonth = displayedYearMonth.atDay(1)
+                                val leadingEmptyCells = firstOfMonth.dayOfWeek.value - 1 // Lunedì = 0 .. Domenica = 6
+                                val daysInMonth = displayedYearMonth.lengthOfMonth()
+                                val totalCells = ((leadingEmptyCells + daysInMonth + 6) / 7) * 7
+                                val today = LocalDate.now(zone)
+
+                                for (week in 0 until (totalCells / 7)) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 2.dp),
+                                        horizontalArrangement = Arrangement.SpaceEvenly
+                                    ) {
+                                        for (col in 0..6) {
+                                            val cellIndex = week * 7 + col
+                                            val dayNumber = cellIndex - leadingEmptyCells + 1
+                                            if (dayNumber in 1..daysInMonth) {
+                                                val cellDate = displayedYearMonth.atDay(dayNumber)
+                                                val daySessions = sessionsByDate[cellDate].orEmpty()
+                                                val hasMeditation = daySessions.isNotEmpty()
+                                                val dayTotalMins = daySessions.sumOf { it.durationMinutes }
+                                                val isToday = cellDate == today
+
+                                                val circleBgColor = when {
+                                                    !hasMeditation -> Color.Transparent
+                                                    dayTotalMins >= 30 -> MaterialTheme.colorScheme.primary
+                                                    dayTotalMins >= 15 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.72f)
+                                                    else -> MaterialTheme.colorScheme.primaryContainer
+                                                }
+                                                val dayTextColor = when {
+                                                    !hasMeditation && isToday -> MaterialTheme.colorScheme.primary
+                                                    !hasMeditation -> MaterialTheme.colorScheme.onSurface
+                                                    dayTotalMins >= 15 -> MaterialTheme.colorScheme.onPrimary
+                                                    else -> MaterialTheme.colorScheme.onPrimaryContainer
+                                                }
+
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(36.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(32.dp)
+                                                            .background(circleBgColor, CircleShape)
+                                                            .then(
+                                                                if (hasMeditation) {
+                                                                    Modifier.border(
+                                                                        width = 1.dp,
+                                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                                                                        shape = CircleShape
+                                                                    )
+                                                                } else if (isToday) {
+                                                                    Modifier.border(
+                                                                        width = 1.dp,
+                                                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
+                                                                        shape = CircleShape
+                                                                    )
+                                                                } else {
+                                                                    Modifier
+                                                                }
+                                                            )
+                                                            .clickable(enabled = hasMeditation) {
+                                                                selectedCalendarDate = cellDate
+                                                            },
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = "$dayNumber",
+                                                            fontSize = 13.sp,
+                                                            fontWeight = if (hasMeditation || isToday) FontWeight.Bold else FontWeight.Normal,
+                                                            color = dayTextColor,
+                                                            style = TextStyle(fontFeatureSettings = "tnum")
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                Spacer(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(36.dp)
+                                                )
                                             }
                                         }
                                     }
                                 }
                             }
+                        }
+
+                        if (sessionHistoryList.isEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = stringResource(R.string.stats_history_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 },
@@ -2526,7 +2764,114 @@ fun MeditationTimerScreen(
             )
         }
 
-        // --- CONFERMA CANCELLAZIONE SINGOLA SESSIONE ---
+        // --- POPUP 1: DETTAGLI MEDITAZIONI DEL GIORNO SELEZIONATO ---
+        selectedCalendarDate?.let { selectedDate ->
+            val zone = remember { ZoneId.systemDefault() }
+            val locale = Locale.getDefault()
+            val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm", locale) }
+            val dateTitleFormatter = remember(locale) {
+                DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG).withLocale(locale)
+            }
+            val daySessions = remember(sessionHistoryList, selectedDate, zone) {
+                sessionHistoryList
+                    .filter { Instant.ofEpochSecond(it.startEpochSec).atZone(zone).toLocalDate() == selectedDate }
+                    .sortedBy { it.startEpochSec }
+            }
+
+            if (daySessions.isEmpty()) {
+                LaunchedEffect(Unit) {
+                    selectedCalendarDate = null
+                }
+            } else {
+                val dayTotalMinutes = daySessions.sumOf { it.durationMinutes }
+                AlertDialog(
+                    onDismissRequest = { selectedCalendarDate = null },
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(24.dp),
+                    title = {
+                        Column {
+                            Text(
+                                text = selectedDate.format(dateTitleFormatter)
+                                    .replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() },
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (daySessions.size == 1) {
+                                    stringResource(R.string.stats_day_single_summary, dayTotalMinutes)
+                                } else {
+                                    stringResource(R.string.stats_day_total_summary, daySessions.size, dayTotalMinutes)
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    text = {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 260.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(daySessions, key = { it.rawString }) { session ->
+                                val startStr = Instant.ofEpochSecond(session.startEpochSec).atZone(zone).format(timeFormatter)
+                                val endStr = Instant.ofEpochSecond(session.endEpochSec).atZone(zone).format(timeFormatter)
+
+                                Card(
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = stringResource(R.string.stats_min_format, session.durationMinutes),
+                                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = stringResource(R.string.stats_session_time_range, startStr, endStr),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        IconButton(
+                                            onClick = { sessionToDelete = session },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Text(
+                                                text = "\uD83D\uDDD1",
+                                                fontSize = 16.sp,
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = { selectedCalendarDate = null },
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Text(stringResource(R.string.button_close))
+                        }
+                    }
+                )
+            }
+        }
+
+        // --- POPUP 2: CONFERMA CANCELLAZIONE SINGOLA SESSIONE ---
         sessionToDelete?.let { session ->
             AlertDialog(
                 onDismissRequest = { sessionToDelete = null },
