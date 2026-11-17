@@ -47,7 +47,10 @@ class HealthConnectManager(private val context: Context) {
                 startZoneOffset = ZoneOffset.systemDefault().rules.getOffset(startTime),
                 endTime = endTime,
                 endZoneOffset = ZoneOffset.systemDefault().rules.getOffset(endTime),
-                metadata = Metadata.activelyRecorded(Device(type = Device.TYPE_PHONE)),
+                metadata = Metadata.activelyRecorded(
+                    device = Device(type = Device.TYPE_PHONE),
+                    clientRecordId = "still-${startTime.epochSecond}-${endTime.epochSecond}"
+                ),
                 mindfulnessSessionType = MindfulnessSessionRecord.MINDFULNESS_SESSION_TYPE_MEDITATION,
                 title = "Still",
                 notes = "Sessione meditativa registrata con Still"

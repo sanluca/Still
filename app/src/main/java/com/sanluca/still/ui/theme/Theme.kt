@@ -1,41 +1,36 @@
 package com.sanluca.still.ui.theme
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 
-val DarkWarmColorScheme = darkColorScheme(
-    primary = WarmPeachPrimary, // #E5A882
-    onPrimary = WarmPeachOnPrimary, // #24140A
-    primaryContainer = StatsMinutesBadge, // #5A3B24
-    onPrimaryContainer = WarmIvoryText, // #ECE4DF
-    secondary = WarmTitleStill, // #D1A184
-    onSecondary = WarmPeachOnPrimary, // #24140A
-    secondaryContainer = StatsSessionsBadge, // #3E291C
-    onSecondaryContainer = WarmIvoryText, // #ECE4DF
-    tertiary = WarmTitleStill, // #D1A184
-    onTertiary = WarmPeachOnPrimary, // #24140A
-    tertiaryContainer = StatsStreakBadge, // #FFF3B0
-    onTertiaryContainer = StatsStreakText, // #2C1E0A
-    background = DarkWarmBackground, // #0C0806
-    onBackground = WarmIvoryText, // #ECE4DF
-    surface = DarkWarmSurface, // #221C17
-    onSurface = WarmIvoryText, // #ECE4DF
-    surfaceVariant = DarkWarmSurfaceVariant, // #2A221C
-    onSurfaceVariant = WarmSandSubtitles, // #B8ADA5
-    outline = DarkWarmOutline, // #3E3129
-    outlineVariant = DarkWarmOutline, // #3E3129
-)
+val LocalStillColors = staticCompositionLocalOf { AutumnExtendedColors }
 
 @Composable
 fun StillTheme(
-    darkTheme: Boolean = true,
-    dynamicColor: Boolean = false,
-    content: @Composable () -> Unit
+    palette: StillColorPalette = StillColorPalette.AUTUMN,
+    content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = DarkWarmColorScheme,
-        typography = Typography,
-        content = content
-    )
+    val colorScheme = when (palette) {
+        StillColorPalette.SPRING -> SpringColorScheme
+        StillColorPalette.SUMMER -> SummerColorScheme
+        StillColorPalette.AUTUMN -> DarkWarmColorScheme
+        StillColorPalette.WINTER -> WinterColorScheme
+    }
+
+    val extendedColors = when (palette) {
+        StillColorPalette.SPRING -> SpringExtendedColors
+        StillColorPalette.SUMMER -> SummerExtendedColors
+        StillColorPalette.AUTUMN -> AutumnExtendedColors
+        StillColorPalette.WINTER -> WinterExtendedColors
+    }
+
+    CompositionLocalProvider(LocalStillColors provides extendedColors) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

@@ -13,10 +13,14 @@ android {
         applicationId = "com.sanluca.still"
         minSdk = 28 // Pixel Watch e dispositivi Wear OS 2.0+
         targetSdk = 36
-        versionCode = 10003
-        versionName = "1.0.1"
+        versionCode = 10000 + libs.versions.appVersionCode.get().toInt()
+        versionName = libs.versions.appVersion.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            debugSymbolLevel = "FULL"
+        }
     }
 
     val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -66,9 +70,8 @@ dependencies {
     implementation(libs.androidx.material3)
 
     // Wear OS & Google Play Services Wearable Data Layer
-    implementation("androidx.wear.compose:compose-material3:1.0.0-alpha28")
-    implementation("androidx.wear.compose:compose-foundation:1.4.1")
     implementation("androidx.wear:wear:1.3.0")
+    implementation("androidx.wear:wear-ongoing:1.0.0")
     implementation("androidx.fragment:fragment-ktx:1.8.1")
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
 

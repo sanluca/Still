@@ -5,6 +5,9 @@
     <!-- Permesso per attivare/disattivare la modalità Non Disturbare -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
 
+    <!-- Permesso per la vibrazione aptica del gong a inizio/fine meditazione -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- Permesso WakeLock per mantenere attivo il processore a schermo spento durante la meditazione -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
@@ -34,8 +37,10 @@
         android:theme="@style/Theme.Still">
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|locale|layoutDirection|fontScale"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTask"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.Still"
             android:windowSoftInputMode="adjustResize">

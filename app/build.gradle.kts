@@ -13,10 +13,14 @@ android {
         applicationId = "com.sanluca.still"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.0.1"
+        versionCode = libs.versions.appVersionCode.get().toInt()
+        versionName = libs.versions.appVersion.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            debugSymbolLevel = "FULL"
+        }
     }
 
     val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -71,6 +75,10 @@ dependencies {
 
     // Play Services Wearable per comunicazione con Pixel Watch
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
+
+    // Google Play In-App Updates
+    implementation(libs.play.app.update)
+    implementation(libs.play.app.update.ktx)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

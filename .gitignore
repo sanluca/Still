@@ -1,5 +1,6 @@
 # Gradle e directory di compilazione (radice, :app, :wear e qualsiasi sottomodulo)
 .gradle/
+.kotlin/
 build/
 **/build/
 
@@ -34,3 +35,7 @@ Thumbs.db
 # Cartelle di esportazione pacchetti release
 release/
 **/release/
+
+# Documentazione e appunti interni
+istruzioni*
+istruzioni.md

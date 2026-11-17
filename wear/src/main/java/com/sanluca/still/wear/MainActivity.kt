@@ -3,9 +3,11 @@
 package com.sanluca.still.wear
 
 import com.sanluca.still.wear.ui.theme.OvertimeGold
+import com.sanluca.still.wear.ui.theme.StillColorPalette
 import com.sanluca.still.wear.ui.theme.StillTheme
 import android.Manifest
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -15,38 +17,46 @@ import android.app.Activity
 import android.content.Context
 import android.media.AudioAttributes
 import android.os.Bundle
-import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
-import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -60,20 +70,30 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
-import com.sanluca.still.wear.R
-import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import android.content.BroadcastReceiver
@@ -81,9 +101,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.time.Instant
 import java.util.Date
@@ -107,10 +127,16 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
         ambientController = AmbientModeSupport.attach(this)
         ambientController.setAutoResumeEnabled(true)
         setContent {
-            StillTheme {
+            var selectedPalette by remember { mutableStateOf(getSavedColorPalette(this)) }
+            StillTheme(palette = selectedPalette) {
                 WearMeditationApp(
                     isAmbient = isAmbientState.value,
-                    ambientUpdateTick = ambientUpdateTickState.value
+                    ambientUpdateTick = ambientUpdateTickState.value,
+                    selectedPalette = selectedPalette,
+                    onPaletteSelected = { newPalette ->
+                        selectedPalette = newPalette
+                        saveColorPalette(this, newPalette)
+                    }
                 )
             }
         }
@@ -139,7 +165,24 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
 private const val PREFS_NAME = "still_wear_prefs"
 private const val KEY_PREP_TIME = "prep_time_seconds"
 private const val KEY_GONG_FREQ = "gong_frequency_hz"
+private const val KEY_GONG_VOLUME = "gong_volume_percent"
+private const val KEY_ALERT_MODE = "alert_mode"
+private const val KEY_COLOR_PALETTE = "color_palette"
 private const val KEY_PENDING_SESSIONS = "pending_watch_sessions"
+
+const val ALERT_MODE_BOTH = 0
+const val ALERT_MODE_SOUND = 1
+const val ALERT_MODE_VIBRATION = 2
+
+fun getSavedColorPalette(context: Context): StillColorPalette {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return StillColorPalette.fromId(prefs.getString(KEY_COLOR_PALETTE, StillColorPalette.AUTUMN.id))
+}
+
+fun saveColorPalette(context: Context, palette: StillColorPalette) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putString(KEY_COLOR_PALETTE, palette.id).apply()
+}
 
 fun getSavedPrepTime(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -159,6 +202,28 @@ fun getSavedGongFrequency(context: Context): Double {
 fun saveGongFrequency(context: Context, freqHz: Double) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putFloat(KEY_GONG_FREQ, freqHz.toFloat()).apply()
+}
+
+fun getSavedGongVolume(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_GONG_VOLUME, 100).coerceIn(20, 100)
+}
+
+fun saveGongVolume(context: Context, volumePercent: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_GONG_VOLUME, volumePercent.coerceIn(20, 100)).apply()
+}
+
+fun getSavedAlertMode(context: Context): Int {
+    val hasAudioHardware = context.packageManager.hasSystemFeature(PackageManager.FEATURE_AUDIO_OUTPUT)
+    val defaultMode = if (hasAudioHardware) ALERT_MODE_BOTH else ALERT_MODE_VIBRATION
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_ALERT_MODE, defaultMode)
+}
+
+fun saveAlertMode(context: Context, mode: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_ALERT_MODE, mode).apply()
 }
 
 fun savePendingSessionOnWatch(context: Context, raw: String) {
@@ -233,7 +298,7 @@ fun sendSessionToPhone(context: Context, durationSec: Int, startInstant: Instant
     }
 }
 
-fun triggerHapticGong(context: Context) {
+fun triggerHapticGong(context: Context, repeatCount: Int = 1) {
     try {
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
@@ -244,22 +309,53 @@ fun triggerHapticGong(context: Context) {
         }
 
         if (vibrator != null && vibrator.hasVibrator()) {
-            val audioAttributes = AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .build()
-
-            val timings = longArrayOf(0, 500, 200, 800)
+            val timings = if (repeatCount >= 3) {
+                longArrayOf(0, 500, 200, 800, 600, 500, 200, 800, 600, 500, 200, 800)
+            } else {
+                longArrayOf(0, 500, 200, 800)
+            }
             val effect = VibrationEffect.createWaveform(timings, -1)
-            vibrator.vibrate(effect, audioAttributes)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val vibrationAttributes = android.os.VibrationAttributes.createForUsage(
+                    android.os.VibrationAttributes.USAGE_ALARM
+                )
+                vibrator.vibrate(effect, vibrationAttributes)
+            } else {
+                val audioAttributes = AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .build()
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(effect, audioAttributes)
+            }
         }
     } catch (e: Exception) {
         e.printStackTrace()
     }
 }
 
+fun cancelGongVibration(context: Context) {
+    try {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
+            vibratorManager?.defaultVibrator ?: (context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+        vibrator?.cancel()
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
 @Composable
-fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) {
+fun WearMeditationApp(
+    isAmbient: Boolean = false,
+    ambientUpdateTick: Long = 0L,
+    selectedPalette: StillColorPalette = StillColorPalette.AUTUMN,
+    onPaletteSelected: (StillColorPalette) -> Unit = {}
+) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
@@ -272,7 +368,10 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
     
     var prepTimeSeconds by remember { mutableStateOf(getSavedPrepTime(context)) }
     var gongFreqHz by remember { mutableStateOf(getSavedGongFrequency(context)) }
-    var currentClockText by remember { mutableStateOf(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())) }
+    var gongVolumePercent by remember { mutableStateOf(getSavedGongVolume(context)) }
+    var alertMode by remember { mutableStateOf(getSavedAlertMode(context)) }
+    val clockFormatter = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    var currentClockText by remember { mutableStateOf(clockFormatter.format(Date())) }
 
     var isPreparing by remember { mutableStateOf(false) }
     var prepTimeLeftSeconds by remember { mutableStateOf(0) }
@@ -289,7 +388,7 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
     val receiver = remember {
         object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                currentClockText = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                currentClockText = clockFormatter.format(Date())
                 if (intent?.action == StillTimerService.ACTION_TIMER_TICK) {
                     if (!isTimerRunning) {
                         return
@@ -329,7 +428,7 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
     }
 
     LaunchedEffect(isAmbient, ambientUpdateTick) {
-        currentClockText = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+        currentClockText = clockFormatter.format(Date())
     }
 
     LaunchedEffect(Unit) {
@@ -338,28 +437,15 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        while (true) {
-            currentClockText = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-            delay(10_000L)
-        }
     }
 
-    DisposableEffect(context) {
-        val messageClient = Wearable.getMessageClient(context)
-        val listener = MessageClient.OnMessageReceivedListener { messageEvent ->
-            if (messageEvent.path == "/update_settings") {
-                val raw = String(messageEvent.data)
-                val parts = raw.split("|")
-                if (parts.isNotEmpty()) {
-                    val prepSec = parts[0].toIntOrNull() ?: 0
-                    prepTimeSeconds = prepSec
-                    savePrepTime(context, prepSec)
-                }
+    // Aggiornamento periodico dell'ora solo con schermo attivo (in ambient bastano i tick di sistema)
+    LaunchedEffect(isAmbient) {
+        if (!isAmbient) {
+            while (true) {
+                currentClockText = clockFormatter.format(Date())
+                delay(10_000L)
             }
-        }
-        messageClient.addListener(listener)
-        onDispose {
-            messageClient.removeListener(listener)
         }
     }
 
@@ -376,19 +462,47 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
         }
     }
 
-    val backgroundColor = if (isAmbient && isTimerRunning) Color.Black else MaterialTheme.colorScheme.background
-    val overtimeColor = if (isAmbient && isTimerRunning) Color.White else OvertimeGold
-    val prepColor = if (isAmbient && isTimerRunning) Color.White else MaterialTheme.colorScheme.tertiary
+    val backgroundColor = if (isAmbient) Color.Black else MaterialTheme.colorScheme.background
+    val overtimeColor = if (isAmbient) Color.White else OvertimeGold
+    val prepColor = if (isAmbient) Color.White else MaterialTheme.colorScheme.tertiary
+    val currentView = LocalView.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val keepScreenAwake = isTimerRunning || isOvertime
+
+    // Con timer attivo o in overtime lo swipe-to-dismiss/back non chiude per errore l'Activity
+    BackHandler(enabled = isTimerRunning || isOvertime) { }
+
+    // Triplo presidio per non far spegnere lo schermo durante preparazione, meditazione e tempo extra
+    DisposableEffect(keepScreenAwake, lifecycleOwner) {
+        val window = context.findActivity()?.window
+        fun applyKeepScreenOn(awake: Boolean) {
+            currentView.keepScreenOn = awake
+            if (awake) {
+                window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+        applyKeepScreenOn(keepScreenAwake)
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                applyKeepScreenOn(keepScreenAwake)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            applyKeepScreenOn(false)
+        }
+    }
 
     LaunchedEffect(isTimerRunning) {
-        val activity = context.findActivity()
         if (isTimerRunning) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
-            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (!StillTimerService.isServiceRunning) {
                 if (sessionStartTime == null) {
                     val serviceIntent = Intent(context, StillTimerService::class.java).apply {
@@ -397,6 +511,8 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                         putExtra(StillTimerService.EXTRA_TIME, selectedTimeInSeconds)
                         putExtra(StillTimerService.EXTRA_INITIAL_TIME, selectedTimeInSeconds)
                         putExtra(StillTimerService.EXTRA_PREP, prepTimeSeconds)
+                        putExtra(StillTimerService.EXTRA_ALERT_MODE, alertMode)
+                        putExtra(StillTimerService.EXTRA_VOLUME, gongVolumePercent)
                     }
                     context.startForegroundService(serviceIntent)
                 } else {
@@ -407,6 +523,8 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                         putExtra(StillTimerService.EXTRA_TIME, timeLeftInSeconds)
                         putExtra(StillTimerService.EXTRA_INITIAL_TIME, selectedTimeInSeconds)
                         putExtra(StillTimerService.EXTRA_PREP, -1) // -1 tells the service it's a resume so no start gong
+                        putExtra(StillTimerService.EXTRA_ALERT_MODE, alertMode)
+                        putExtra(StillTimerService.EXTRA_VOLUME, gongVolumePercent)
                         putExtra(StillTimerService.EXTRA_IS_OVERTIME, isOvertime)
                         putExtra(StillTimerService.EXTRA_OVERTIME_SECONDS, overtimeSeconds)
                     }
@@ -414,7 +532,6 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                 }
             }
         } else {
-            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (StillTimerService.isServiceRunning) {
                 val stopIntent = Intent(context, StillTimerService::class.java).apply {
                     action = StillTimerService.ACTION_STOP
@@ -426,21 +543,8 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
         }
     }
 
-    fun saveAndFinishSession(includeExtra: Boolean) {
-        val plannedSec = if (selectedTimeInSeconds > 0) {
-            if (isOvertime) selectedTimeInSeconds else (selectedTimeInSeconds - timeLeftInSeconds)
-        } else {
-            timeLeftInSeconds
-        }
-        val totalSec = if (includeExtra && isOvertime) (plannedSec + overtimeSeconds) else plannedSec
-        val end = Instant.now()
-        val start = end.minusSeconds(totalSec.toLong())
-
-        if (totalSec >= 10) {
-            sendSessionToPhone(context, totalSec, start, end)
-            Toast.makeText(context, context.getString(R.string.toast_sync_success), Toast.LENGTH_SHORT).show()
-        }
-
+    fun resetTimerState() {
+        cancelGongVibration(context)
         val stopIntent = Intent(context, StillTimerService::class.java).apply {
             action = StillTimerService.ACTION_STOP
         }
@@ -454,7 +558,27 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
         sessionStartTime = null
     }
 
-    val isInitialState = !isTimerRunning && !isOvertime && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
+    val toastSyncSuccessText = stringResource(R.string.toast_sync_success)
+
+    fun saveAndFinishSession(includeExtra: Boolean) {
+        val plannedSec = if (selectedTimeInSeconds > 0) {
+            if (isOvertime) selectedTimeInSeconds else (selectedTimeInSeconds - timeLeftInSeconds)
+        } else {
+            timeLeftInSeconds
+        }
+        val totalSec = if (includeExtra && isOvertime) (plannedSec + overtimeSeconds) else plannedSec
+        val end = Instant.now()
+        val start = end.minusSeconds(totalSec.toLong())
+
+        if (totalSec >= 10) {
+            sendSessionToPhone(context, totalSec, start, end)
+            Toast.makeText(context, toastSyncSuccessText, Toast.LENGTH_SHORT).show()
+        }
+
+        resetTimerState()
+    }
+
+    val isInitialState = !isTimerRunning && !isOvertime && sessionStartTime == null && (timeLeftInSeconds == selectedTimeInSeconds || (selectedTimeInSeconds == -1 && timeLeftInSeconds == 0))
 
     // La pagina Impostazioni esiste solo quando il timer è fermo
     val showSettingsPage = !isTimerRunning && !isOvertime
@@ -463,170 +587,238 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
         if (!showSettingsPage) pagerState.scrollToPage(0)
     }
 
-    // Cerchio adattato all'altezza reale dello schermo per lasciare sempre spazio al pulsante sotto
-    val circleSize = (LocalConfiguration.current.screenHeightDp * (if (isOvertime) 0.46f else 0.54f)).dp
-        .coerceIn(92.dp, 124.dp)
-    val crescentRadiusOffset = circleSize / 2 + 17.dp
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundColor),
+            .background(backgroundColor)
+            .then(if (keepScreenAwake) Modifier.keepScreenOn() else Modifier),
         contentAlignment = Alignment.Center
     ) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize()
         ) { page ->
-            // ================= PAGINA 1: TIMER (fissa, centrata) =================
-            if (page == 0) Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(start = 4.dp, end = 4.dp, bottom = 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+            // ================= PAGINA 1: TIMER (quadrante del tempo minimale perimetrale) =================
+            if (page == 0) BoxWithConstraints(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = currentClockText,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (isAmbient && isTimerRunning) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                // CERCHIO CON MEZZE LUNE [-] E [+] ATTORNO AL QUADRANTE
-                val showCrescents = !isTimerRunning && !isOvertime
+                val diameter = minOf(maxWidth, maxHeight)
+                val isPausedState = !isInitialState && !isTimerRunning && !isOvertime
+                val showSideControls = isInitialState || isPausedState || isOvertime
                 val canDecrease = selectedTimeInSeconds != -1
-                val crescentActiveColor = MaterialTheme.colorScheme.secondaryContainer
-                val crescentDisabledColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
 
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(width = circleSize + 52.dp, height = circleSize + 8.dp)
-                ) {
-                    if (showCrescents) {
-                        Canvas(modifier = Modifier.size(circleSize + 34.dp)) {
-                            val strokePx = 16.dp.toPx()
-                            // Mezza luna sinistra (-)
-                            drawArc(
-                                color = if (canDecrease) crescentActiveColor else crescentDisabledColor,
-                                startAngle = 144f,
-                                sweepAngle = 72f,
-                                useCenter = false,
-                                style = Stroke(width = strokePx, cap = StrokeCap.Round)
-                            )
-                            // Mezza luna destra (+)
-                            drawArc(
-                                color = crescentActiveColor,
-                                startAngle = -36f,
-                                sweepAngle = 72f,
-                                useCenter = false,
-                                style = Stroke(width = strokePx, cap = StrokeCap.Round)
-                            )
-                        }
+                // Animazione di pulsazione lenta del respiro (solo con timer attivo e non in ambient)
+                // Animazione di pulsazione lenta del respiro: attiva solo con timer in esecuzione e non in ambient
+                val breathGlowAlphaState: androidx.compose.runtime.State<Float>? = if (isTimerRunning && !isAmbient) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "wear_breath_transition")
+                    infiniteTransition.animateFloat(
+                        initialValue = 0.08f,
+                        targetValue = 0.22f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(durationMillis = 3500, easing = LinearEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "wear_breath_glow"
+                    )
+                } else {
+                    null
+                }
 
-                        // Tocco Mezza Luna Sinistra (- : centrato esattamente sull'arco sinistro)
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .offset(x = -crescentRadiusOffset)
-                                .size(width = 32.dp, height = 88.dp)
-                                .clickable(
-                                    enabled = canDecrease,
-                                    indication = null,
-                                    interactionSource = remember { MutableInteractionSource() }
-                                ) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    if (selectedTimeInSeconds > 60) {
-                                        updateTimeSelection(selectedTimeInSeconds - 60)
-                                    } else if (selectedTimeInSeconds == 60) {
-                                        updateTimeSelection(-1)
-                                    }
-                                }
-                        ) {
-                            Text(
-                                text = "−",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (canDecrease) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                            )
-                        }
+                val primaryColor = MaterialTheme.colorScheme.primary
+                val tertiaryColor = MaterialTheme.colorScheme.tertiary
+                val ringTrackColor = if (isAmbient) Color.Transparent else primaryColor.copy(alpha = 0.14f)
 
-                        // Tocco Mezza Luna Destra (+ : centrato esattamente sull'arco destro)
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .offset(x = crescentRadiusOffset)
-                                .size(width = 32.dp, height = 88.dp)
-                                .clickable(
-                                    indication = null,
-                                    interactionSource = remember { MutableInteractionSource() }
-                                ) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    updateTimeSelection(if (selectedTimeInSeconds == -1) 60 else selectedTimeInSeconds + 60)
-                                }
-                        ) {
-                            Text(
-                                text = "+",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        }
+                // 1. CANVAS PERIMETRALE PULITO (Glow radiale soffuso + Traccia di fondo + Arco di avanzamento)
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    val centerOffset = Offset(w / 2f, h / 2f)
+                    val outerPaddingPx = 4.dp.toPx()
+                    val arcDiameter = (minOf(w, h) - outerPaddingPx * 2).coerceAtLeast(10f)
+                    val arcTopLeft = Offset((w - arcDiameter) / 2f, (h - arcDiameter) / 2f)
+                    val arcSize = androidx.compose.ui.geometry.Size(arcDiameter, arcDiameter)
+                    val strokeWidthPx = if (isAmbient) 1.5.dp.toPx() else 2.5.dp.toPx()
+
+                    // A) Bagliore radiale centrale molto soffuso (solo in modalità attiva, spento in Ambient)
+                    if (!isAmbient) {
+                        val glowAlpha = breathGlowAlphaState?.value ?: 0.10f
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    tertiaryColor.copy(alpha = glowAlpha),
+                                    primaryColor.copy(alpha = glowAlpha * 0.45f),
+                                    Color.Transparent
+                                ),
+                                center = centerOffset,
+                                radius = arcDiameter * 0.52f
+                            ),
+                            radius = arcDiameter * 0.52f,
+                            center = centerOffset
+                        )
                     }
 
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.size(circleSize - 8.dp)
+                    // B) Traccia circolare sottile di fondo a 360°
+                    drawArc(
+                        color = ringTrackColor,
+                        startAngle = 0f,
+                        sweepAngle = 360f,
+                        useCenter = false,
+                        topLeft = arcTopLeft,
+                        size = arcSize,
+                        style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+                    )
+
+                    // C) Arco perimetrale di avanzamento
+                    val sweepAngle = when {
+                        isPreparing -> (prepTimeLeftSeconds.toFloat() / prepTimeSeconds.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f) * 360f
+                        isOvertime -> 360f
+                        selectedTimeInSeconds == -1 -> if (isTimerRunning) 360f else 0f
+                        else -> progress.coerceIn(0f, 1f) * 360f
+                    }
+
+                    val arcStroke = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
+
+                    if (isAmbient) {
+                        // In Ambient: arco sottile monocromatico senza gradienti
+                        drawArc(
+                            color = Color.White,
+                            startAngle = -90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = false,
+                            topLeft = arcTopLeft,
+                            size = arcSize,
+                            style = arcStroke
+                        )
+                    } else if (isOvertime) {
+                        drawArc(
+                            color = overtimeColor,
+                            startAngle = -90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = false,
+                            topLeft = arcTopLeft,
+                            size = arcSize,
+                            style = arcStroke
+                        )
+                    } else if (isPreparing) {
+                        drawArc(
+                            color = prepColor,
+                            startAngle = -90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = false,
+                            topLeft = arcTopLeft,
+                            size = arcSize,
+                            style = arcStroke
+                        )
+                    } else if (sweepAngle > 0.5f) {
+                        // Sfumatura morbida tra primary e tertiary lungo il perimetro
+                        drawArc(
+                            brush = Brush.sweepGradient(
+                                colors = listOf(primaryColor, tertiaryColor, primaryColor),
+                                center = centerOffset
+                            ),
+                            startAngle = -90f,
+                            sweepAngle = sweepAngle,
+                            useCenter = false,
+                            topLeft = arcTopLeft,
+                            size = arcSize,
+                            style = arcStroke
+                        )
+                    }
+                }
+
+                // 2. CONTENITORE INTERNO INSCRITTO (SAFE ZONE)
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = diameter * 0.10f, vertical = diameter * 0.11f),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Fascia superiore (Ore 12)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        if (isPreparing) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.fillMaxSize(),
-                                color = prepColor,
-                                strokeWidth = 6.dp
+                        Text(
+                            text = currentClockText,
+                            fontSize = 10.sp,
+                            color = if (isAmbient) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            style = TextStyle(
+                                fontFeatureSettings = "tnum",
+                                fontWeight = FontWeight.Normal
                             )
-                        } else if (isOvertime) {
-                            CircularProgressIndicator(
-                                progress = { 1f },
-                                modifier = Modifier.fillMaxSize(),
-                                color = overtimeColor,
-                                strokeWidth = 6.dp,
-                                strokeCap = StrokeCap.Round
-                            )
-                        } else if (selectedTimeInSeconds != -1) {
-                            CircularProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier.fillMaxSize(),
-                                color = if (isAmbient && isTimerRunning) Color.White else MaterialTheme.colorScheme.primary,
-                                trackColor = if (isAmbient && isTimerRunning) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant,
-                                strokeWidth = 6.dp,
-                                strokeCap = StrokeCap.Round
-                            )
-                        } else {
-                            CircularProgressIndicator(
-                                progress = { 1f },
-                                modifier = Modifier.fillMaxSize(),
-                                color = if (isAmbient && isTimerRunning) Color.White else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                strokeWidth = 4.dp
-                            )
+                        )
+                        Text(
+                            text = when {
+                                isPreparing -> stringResource(R.string.text_prepare)
+                                isOvertime -> stringResource(R.string.status_extra)
+                                else -> stringResource(R.string.status_still)
+                            },
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 1,
+                            color = when {
+                                isPreparing -> prepColor
+                                isOvertime -> overtimeColor
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                            }
+                        )
+                    }
+
+                    // Fascia centrale (Row)
+                    val sideBtnSize = (diameter * 0.145f).coerceIn(26.dp, 32.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        // Pulsante circolare [-]
+                        Box(
+                            modifier = Modifier.size(sideBtnSize),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (showSideControls && !isAmbient) {
+                                val leftEnabled = !isInitialState || canDecrease
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(sideBtnSize)
+                                        .background(primaryColor.copy(alpha = if (leftEnabled) 0.12f else 0.04f), CircleShape)
+                                        .border(1.dp, primaryColor.copy(alpha = if (leftEnabled) 0.40f else 0.15f), CircleShape)
+                                        .clickable(
+                                            enabled = leftEnabled,
+                                            indication = null,
+                                            interactionSource = remember { MutableInteractionSource() }
+                                        ) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            if (isInitialState) {
+                                                if (selectedTimeInSeconds > 60) {
+                                                    updateTimeSelection(selectedTimeInSeconds - 60)
+                                                } else if (selectedTimeInSeconds == 60) {
+                                                    updateTimeSelection(-1)
+                                                }
+                                            } else {
+                                                resetTimerState()
+                                            }
+                                        }
+                                ) {
+                                    Text(
+                                        text = if (isInitialState) "−" else "✕",
+                                        fontSize = if (isInitialState) 15.sp else 11.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = if (leftEnabled) primaryColor else primaryColor.copy(alpha = 0.3f)
+                                    )
+                                }
+                            }
                         }
 
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = when {
-                                    isPreparing -> stringResource(R.string.text_prepare)
-                                    isOvertime -> stringResource(R.string.status_extra)
-                                    else -> stringResource(R.string.status_still)
-                                },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = when {
-                                    isPreparing -> prepColor
-                                    isOvertime -> overtimeColor
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            )
+                        // Testo del timer MM:SS
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(
                                 text = when {
                                     isPreparing -> "${prepTimeLeftSeconds}s"
@@ -634,254 +826,550 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
                                     selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> "∞"
                                     else -> formatTime(timeLeftInSeconds)
                                 },
-                                fontSize = if (isOvertime) 22.sp else 26.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontSize = if (isOvertime) (diameter.value * 0.135f).sp else (diameter.value * 0.155f).sp,
+                                maxLines = 1,
+                                softWrap = false,
                                 color = when {
                                     isPreparing -> prepColor
                                     isOvertime -> overtimeColor
+                                    isAmbient -> Color.White
                                     else -> MaterialTheme.colorScheme.onBackground
-                                }
+                                },
+                                style = TextStyle(
+                                    fontFeatureSettings = "tnum",
+                                    fontWeight = FontWeight.Light
+                                )
                             )
                         }
+
+                        // Pulsante circolare [+]
+                        Box(
+                            modifier = Modifier.size(sideBtnSize),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (showSideControls && !isAmbient) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(sideBtnSize)
+                                        .background(primaryColor.copy(alpha = 0.12f), CircleShape)
+                                        .border(1.dp, primaryColor.copy(alpha = 0.40f), CircleShape)
+                                        .clickable(
+                                            indication = null,
+                                            interactionSource = remember { MutableInteractionSource() }
+                                        ) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            if (isInitialState) {
+                                                updateTimeSelection(if (selectedTimeInSeconds == -1) 60 else selectedTimeInSeconds + 60)
+                                            } else {
+                                                saveAndFinishSession(includeExtra = false)
+                                            }
+                                        }
+                                ) {
+                                    Text(
+                                        text = if (isInitialState) "+" else "✓",
+                                        fontSize = if (isInitialState) 15.sp else 12.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = primaryColor
+                                    )
+                                }
+                            }
+                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                    // Fascia inferiore (Ore 6)
+                    val bottomPillColor = when {
+                        isAmbient -> Color.Transparent
+                        isOvertime -> overtimeColor
+                        isTimerRunning -> MaterialTheme.colorScheme.secondary
+                        else -> primaryColor
+                    }
+                    val bottomPillTextColor = when {
+                        isAmbient -> Color.White.copy(alpha = 0.8f)
+                        isOvertime -> Color.Black
+                        isTimerRunning -> MaterialTheme.colorScheme.onSecondary
+                        else -> MaterialTheme.colorScheme.onPrimary
+                    }
+                    val pillWidth = (diameter * 0.46f).coerceIn(82.dp, 104.dp)
 
-                // PULSANTI PRINCIPALI (INIZIA / PAUSA / SALVA)
-                if (isOvertime) {
                     Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Button(
-                            onClick = { saveAndFinishSession(includeExtra = true) },
-                            modifier = Modifier.height(30.dp).fillMaxWidth(0.9f),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = overtimeColor)
-                        ) {
-                            Text(stringResource(R.string.button_save_extra, (overtimeSeconds / 60)), fontSize = 10.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                        // Indicatore orizzontale delle 2 pagine (Timer / Impostazioni)
+                        if (showSettingsPage && !isAmbient) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                repeat(2) { index ->
+                                    val selected = pagerState.currentPage == index
+                                    Box(
+                                        modifier = Modifier
+                                            .size(if (selected) 5.dp else 3.5.dp)
+                                            .background(
+                                                if (selected) primaryColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                                CircleShape
+                                            )
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            OutlinedButton(
-                                onClick = { 
-                                    val stopIntent = Intent(context, StillTimerService::class.java).apply {
-                                        action = StillTimerService.ACTION_STOP
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(width = pillWidth, height = 28.dp)
+                                .then(
+                                    if (isAmbient) {
+                                        Modifier.border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                                    } else {
+                                        Modifier
+                                            .background(bottomPillColor, RoundedCornerShape(14.dp))
+                                            .border(1.dp, bottomPillColor.copy(alpha = 0.8f), RoundedCornerShape(14.dp))
                                     }
-                                    context.startService(stopIntent)
-                                    StillTimerService.isServiceRunning = false
-
-                                    isTimerRunning = false
-                                    isOvertime = false
-                                    overtimeSeconds = 0
-                                    timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
-                                    sessionStartTime = null
-                                },
-                                modifier = Modifier.height(28.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                            ) {
-                                Text(stringResource(R.string.button_reset), fontSize = 10.sp)
-                            }
-
-                            OutlinedButton(
-                                onClick = { saveAndFinishSession(includeExtra = false) },
-                                modifier = Modifier.height(28.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                            ) {
-                                Text(stringResource(R.string.button_only_planned), fontSize = 10.sp)
-                            }
-                        }
-                    }
-                } else {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Button(
-                            onClick = { 
-                                if (!isTimerRunning && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                )
+                                .clickable(
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() }
+                                ) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    if (isOvertime) {
+                                        saveAndFinishSession(includeExtra = true)
+                                    } else {
+                                        if (!isTimerRunning && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                            }
+                                        }
+                                        isTimerRunning = !isTimerRunning
                                     }
                                 }
-                                isTimerRunning = !isTimerRunning 
-                            },
-                            modifier = Modifier.height(34.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)
                         ) {
+                            val bottomText = when {
+                                isOvertime -> stringResource(R.string.button_save_extra, (overtimeSeconds / 60))
+                                isTimerRunning -> stringResource(R.string.button_pause)
+                                !isInitialState -> stringResource(R.string.button_resume)
+                                else -> stringResource(R.string.button_start)
+                            }
                             Text(
-                                text = if (isTimerRunning) {
-                                    stringResource(R.string.button_pause)
-                                } else if (!isInitialState) {
-                                    stringResource(R.string.button_resume)
-                                } else {
-                                    stringResource(R.string.button_start)
-                                },
-                                fontSize = if (!isInitialState && !isTimerRunning) 11.sp else 13.sp,
-                                fontWeight = FontWeight.Medium
+                                text = bottomText,
+                                fontSize = if (isOvertime || (!isInitialState && !isTimerRunning)) 10.sp else 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                color = bottomPillTextColor
                             )
-                        }
-
-                        if (!isInitialState && !isTimerRunning) {
-                            Button(
-                                onClick = { saveAndFinishSession(includeExtra = false) },
-                                modifier = Modifier.height(34.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                            ) {
-                                Text("✓", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
-
-                            OutlinedButton(
-                                onClick = { 
-                                    timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
-                                    sessionStartTime = null 
-                                },
-                                modifier = Modifier.height(34.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                            ) {
-                                Text(stringResource(R.string.button_reset), fontSize = 11.sp)
-                            }
                         }
                     }
                 }
-            } else Column(
-                // ================= PAGINA 2: IMPOSTAZIONI (compatta e fissa) =================
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(start = 8.dp, end = 8.dp, top = 12.dp, bottom = 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceEvenly
-            ) {
-                // Titolo cliccabile: un tap riporta subito alla pagina Timer
-                Text(
-                    text = "‹ " + stringResource(R.string.settings_title),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            } else {
+                // ================= PAGINA 2: IMPOSTAZIONI (2 pagine fisse in verticale + rotella) =================
+                val settingsPagerState = rememberPagerState(pageCount = { 2 })
+                val settingsFocusRequester = remember { FocusRequester() }
+                val isSoundEnabled = alertMode != ALERT_MODE_VIBRATION
+                var previewGongJob by remember { mutableStateOf<Job?>(null) }
+
+                fun playPreviewGong(freq: Double, vol: Int) {
+                    previewGongJob?.cancel()
+                    previewGongJob = coroutineScope.launch(Dispatchers.Default) {
+                        playGongSound(context, freq, repeatCount = 1, volumePercent = vol)
+                    }
+                }
+
+                LaunchedEffect(pagerState.currentPage) {
+                    if (pagerState.currentPage == 1) {
+                        settingsFocusRequester.requestFocus()
+                    } else {
+                        previewGongJob?.cancel()
+                    }
+                }
+
+                Box(
                     modifier = Modifier
-                        .clickable { coroutineScope.launch { pagerState.animateScrollToPage(0) } }
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                )
-
-                // GRUPPO 1: FREQUENZA CAMPANA TIBETANA
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(stringResource(R.string.settings_gong_sound), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        FilterChip(
-                            selected = gongFreqHz == 432.0,
-                            onClick = { 
-                                gongFreqHz = 432.0
-                                saveGongFrequency(context, 432.0)
-                                coroutineScope.launch(Dispatchers.Default) {
-                                    playGongSound(432.0, repeatCount = 1)
+                        .fillMaxSize()
+                        .onRotaryScrollEvent { event ->
+                            if (!settingsPagerState.isScrollInProgress) {
+                                if (event.verticalScrollPixels > 0f && settingsPagerState.currentPage < 1) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    coroutineScope.launch { settingsPagerState.animateScrollToPage(1) }
+                                } else if (event.verticalScrollPixels < 0f && settingsPagerState.currentPage > 0) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    coroutineScope.launch { settingsPagerState.animateScrollToPage(0) }
                                 }
-                            },
-                            label = { Text("432Hz", fontSize = 10.sp) }
-                        )
-
-                        FilterChip(
-                            selected = gongFreqHz == 528.0,
-                            onClick = { 
-                                gongFreqHz = 528.0
-                                saveGongFrequency(context, 528.0)
-                                coroutineScope.launch(Dispatchers.Default) {
-                                    playGongSound(528.0, repeatCount = 1)
-                                }
-                            },
-                            label = { Text("528Hz", fontSize = 10.sp) }
-                        )
-
-                        FilterChip(
-                            selected = gongFreqHz == 216.0,
-                            onClick = { 
-                                gongFreqHz = 216.0
-                                saveGongFrequency(context, 216.0)
-                                coroutineScope.launch(Dispatchers.Default) {
-                                    playGongSound(216.0, repeatCount = 1)
-                                }
-                            },
-                            label = { Text("216Hz", fontSize = 10.sp) }
-                        )
-                    }
-                }
-
-                // GRUPPO 2: TEMPO DI PREPARAZIONE COMPATTO [-5s]  10s  [+5s]
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = stringResource(R.string.status_preparing),
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedButton(
-                            onClick = { 
-                                if (prepTimeSeconds >= 5) {
-                                    prepTimeSeconds -= 5
-                                    savePrepTime(context, prepTimeSeconds)
-                                }
-                            },
-                            enabled = prepTimeSeconds >= 5,
-                            modifier = Modifier.size(width = 44.dp, height = 30.dp),
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text("-5s", fontSize = 10.sp)
+                            }
+                            true
                         }
+                        .focusRequester(settingsFocusRequester)
+                        .focusable()
+                ) {
+                    VerticalPager(
+                        state = settingsPagerState,
+                        modifier = Modifier.fillMaxSize()
+                    ) { settingsPage ->
+                        if (settingsPage == 0) {
+                            // --- SOTTOPAGINA 1: MODALITA AVVISO + FREQUENZA + VOLUME ---
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(start = 10.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Text(
+                                    text = "‹ " + stringResource(R.string.settings_title),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .clickable { coroutineScope.launch { pagerState.animateScrollToPage(0) } }
+                                        .padding(horizontal = 10.dp, vertical = 2.dp)
+                                )
 
-                        Text(
-                            text = "${prepTimeSeconds}s",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = prepColor
-                        )
+                                // 1. MODALITA AVVISO (ENTRAMBI / CAMPANE / VIBRAZ.)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = stringResource(R.string.settings_alert_mode),
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        val modeOptions = listOf(
+                                            ALERT_MODE_BOTH to stringResource(R.string.alert_mode_both),
+                                            ALERT_MODE_SOUND to stringResource(R.string.alert_mode_bell),
+                                            ALERT_MODE_VIBRATION to stringResource(R.string.alert_mode_vibrate)
+                                        )
+                                        modeOptions.forEach { (modeValue, labelText) ->
+                                            val isSelected = alertMode == modeValue
+                                            Button(
+                                                onClick = {
+                                                    alertMode = modeValue
+                                                    saveAlertMode(context, modeValue)
+                                                    if (modeValue == ALERT_MODE_BOTH || modeValue == ALERT_MODE_VIBRATION) {
+                                                        triggerHapticGong(context, repeatCount = 1)
+                                                    }
+                                                    if (modeValue == ALERT_MODE_BOTH || modeValue == ALERT_MODE_SOUND) {
+                                                        playPreviewGong(gongFreqHz, gongVolumePercent)
+                                                    } else {
+                                                        previewGongJob?.cancel()
+                                                    }
+                                                },
+                                                shape = RoundedCornerShape(13.dp),
+                                                border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                                                modifier = Modifier.height(26.dp),
+                                                contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                                    contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            ) {
+                                                Text(
+                                                    text = labelText,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    maxLines = 1,
+                                                    softWrap = false
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
 
-                        OutlinedButton(
-                            onClick = { 
-                                prepTimeSeconds += 5
-                                savePrepTime(context, prepTimeSeconds)
-                            },
-                            modifier = Modifier.size(width = 44.dp, height = 30.dp),
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text("+5s", fontSize = 10.sp)
+                                // 2. FREQUENZA CAMPANA TIBETANA
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = stringResource(R.string.settings_gong_sound),
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    val gongRows = listOf(
+                                        listOf(
+                                            432.0 to stringResource(R.string.bell_name_crystal),
+                                            528.0 to stringResource(R.string.bell_name_keisu)
+                                        ),
+                                        listOf(
+                                            216.0 to stringResource(R.string.bell_name_gong),
+                                            2640.0 to stringResource(R.string.bell_name_tingsha)
+                                        )
+                                    )
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        gongRows.forEach { rowItems ->
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                rowItems.forEach { (freq, freqLabel) ->
+                                                    val isSelected = gongFreqHz == freq
+                                                    Button(
+                                                        onClick = {
+                                                            gongFreqHz = freq
+                                                            saveGongFrequency(context, freq)
+                                                            playPreviewGong(freq, gongVolumePercent)
+                                                        },
+                                                        enabled = isSoundEnabled,
+                                                        shape = RoundedCornerShape(13.dp),
+                                                        border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (isSoundEnabled) 0.35f else 0.15f)),
+                                                        modifier = Modifier.height(26.dp),
+                                                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isSoundEnabled) 0.25f else 0.10f),
+                                                            contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isSoundEnabled) 1f else 0.4f),
+                                                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
+                                                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                                        )
+                                                    ) {
+                                                        Text(
+                                                            text = freqLabel,
+                                                            fontSize = 9.sp,
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                            maxLines = 1,
+                                                            softWrap = false
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 3. VOLUME CAMPANA ([-]  100%  [+])
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = stringResource(R.string.settings_gong_volume),
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                if (gongVolumePercent > 20) {
+                                                    val newVol = (gongVolumePercent - 20).coerceAtLeast(20)
+                                                    gongVolumePercent = newVol
+                                                    saveGongVolume(context, newVol)
+                                                    playPreviewGong(gongFreqHz, newVol)
+                                                }
+                                            },
+                                            enabled = isSoundEnabled && gongVolumePercent > 20,
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (isSoundEnabled && gongVolumePercent > 20) 0.35f else 0.15f)),
+                                            modifier = Modifier.size(width = 38.dp, height = 25.dp),
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isSoundEnabled && gongVolumePercent > 20) 0.25f else 0.10f),
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
+                                                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                            )
+                                        ) {
+                                            Text("−", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        Text(
+                                            text = "$gongVolumePercent%",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            style = TextStyle(fontFeatureSettings = "tnum"),
+                                            color = if (isSoundEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                        )
+
+                                        Button(
+                                            onClick = {
+                                                if (gongVolumePercent < 100) {
+                                                    val newVol = (gongVolumePercent + 20).coerceAtMost(100)
+                                                    gongVolumePercent = newVol
+                                                    saveGongVolume(context, newVol)
+                                                    playPreviewGong(gongFreqHz, newVol)
+                                                }
+                                            },
+                                            enabled = isSoundEnabled && gongVolumePercent < 100,
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (isSoundEnabled && gongVolumePercent < 100) 0.35f else 0.15f)),
+                                            modifier = Modifier.size(width = 38.dp, height = 25.dp),
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isSoundEnabled && gongVolumePercent < 100) 0.25f else 0.10f),
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
+                                                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                            )
+                                        ) {
+                                            Text("+", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // --- SOTTOPAGINA 2: TEMA COLORI + PREPARAZIONE + VERSIONE ---
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(start = 10.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Text(
+                                    text = "⌃ " + stringResource(R.string.settings_title),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .clickable { coroutineScope.launch { settingsPagerState.animateScrollToPage(0) } }
+                                        .padding(horizontal = 10.dp, vertical = 2.dp)
+                                )
+
+                                // 1. SELETTORE TEMA (4 PALLINI COLORATI SENZA ICONE)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.settings_color_theme,
+                                            stringResource(selectedPalette.labelRes)
+                                        ),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        StillColorPalette.entries.forEach { palette ->
+                                            val isSelected = selectedPalette == palette
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clickable(
+                                                        indication = null,
+                                                        interactionSource = remember { MutableInteractionSource() }
+                                                    ) {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        onPaletteSelected(palette)
+                                                    }
+                                            ) {
+                                                if (isSelected) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(30.dp)
+                                                            .background(palette.swatchColor.copy(alpha = 0.22f), CircleShape)
+                                                    )
+                                                }
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(if (isSelected) 22.dp else 18.dp)
+                                                        .background(palette.swatchColor, CircleShape)
+                                                        .border(
+                                                            width = if (isSelected) 2.dp else 1.dp,
+                                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.outline.copy(alpha = 0.40f),
+                                                            shape = CircleShape
+                                                        )
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 2. PREPARAZIONE (-5s / +5s)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = stringResource(R.string.status_preparing),
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                if (prepTimeSeconds >= 5) {
+                                                    prepTimeSeconds -= 5
+                                                    savePrepTime(context, prepTimeSeconds)
+                                                }
+                                            },
+                                            enabled = prepTimeSeconds >= 5,
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (prepTimeSeconds >= 5) 0.35f else 0.15f)),
+                                            modifier = Modifier.size(width = 44.dp, height = 26.dp),
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (prepTimeSeconds >= 5) 0.25f else 0.10f),
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.10f),
+                                                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                                            )
+                                        ) {
+                                            Text("-5s", fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                        }
+
+                                        Text(
+                                            text = "${prepTimeSeconds}s",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            style = TextStyle(fontFeatureSettings = "tnum"),
+                                            color = prepColor
+                                        )
+
+                                        Button(
+                                            onClick = {
+                                                prepTimeSeconds += 5
+                                                savePrepTime(context, prepTimeSeconds)
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                                            modifier = Modifier.size(width = 44.dp, height = 26.dp),
+                                            contentPadding = PaddingValues(0.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        ) {
+                                            Text("+5s", fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                        }
+                                    }
+                                }
+
+                                Text(
+                                    text = stringResource(R.string.settings_app_version, BuildConfig.VERSION_NAME),
+                                    fontSize = 9.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
-                }
 
-                Text(
-                    text = stringResource(R.string.settings_app_version, BuildConfig.VERSION_NAME),
-                    fontSize = 9.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // Indicatore di pagina (visibile solo quando il timer è fermo)
-        if (showSettingsPage) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                repeat(2) { index ->
-                    val selected = pagerState.currentPage == index
-                    Box(
+                    // Indicatore verticale delle 2 sottopagine Impostazioni (sul bordo destro)
+                    Column(
                         modifier = Modifier
-                            .size(if (selected) 6.dp else 4.dp)
-                            .background(
-                                if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant,
-                                CircleShape
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 5.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        repeat(2) { idx ->
+                            val selected = settingsPagerState.currentPage == idx
+                            Box(
+                                modifier = Modifier
+                                    .size(if (selected) 6.dp else 4.dp)
+                                    .background(
+                                        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                                        CircleShape
+                                    )
                             )
-                    )
+                        }
+                    }
                 }
             }
         }
@@ -891,5 +1379,5 @@ fun WearMeditationApp(isAmbient: Boolean = false, ambientUpdateTick: Long = 0L) 
 fun formatTime(totalSeconds: Int): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
-    return String.format("%02d:%02d", minutes, seconds)
+    return String.format(Locale.US, "%02d:%02d", minutes, seconds)
 }
