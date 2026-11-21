@@ -1,4 +1,4 @@
-# Still - Minimal Zen Timer (v2.0.3)
+# Still - Minimal Zen Timer (v2.0.4)
 
 [🇮🇹 Versione Italiana](#-versione-italiana) | [🇬🇧 English Version](#-english-version)
 
@@ -63,7 +63,7 @@ Still adotta un approccio rigoroso e trasparente alla tutela dei dati personali:
 ---
 
 ## 🛠️ Scelte Tecniche e Architettura
-- **Versione**: `2.0.3`
+- **Versione**: `2.0.4`
 - **UI Dichiarativa & Grafica Procedurale**: Realizzata interamente con **Jetpack Compose Material 3** e `Canvas` nativo (con supporto opzionale a `RuntimeShader` AGSL su Android 13+ per la fiamma della candela e loop `withFrameNanos` limitati a ~40 fps che si arrestano automaticamente in pausa/stop).
 - **Health Connect Client**: Utilizza le API ufficiali `androidx.health.connect.client.HealthConnectClient`.
 - **Servizi in Background e Affidabilità**:
@@ -99,7 +99,7 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 
 ---
 
-## What's New in Version 2.0.3
+## What's New in Version 2.0.4
 - **4 Bell Timbres Synthesized in 16-bit PCM (Anti-Click Envelope)**: Real-time procedural synthesis with smooth raised-cosine fade-in/fade-out envelopes: **Gong** (216 Hz), **Crystal** (432 Hz), **Keisu** (528 Hz), and **Tingsha** (2640 Hz Tibetan cymbals with crystalline inharmonic metallic partials and acoustic beating).
 - **Independent Intermediate Bell Selector**: On smartphones, choose a dedicated timbre for intermediate interval chimes (defaulting to **Tingsha**), completely independent from the main start/end bell.
 - **Wear OS 2×2 Bell Selector**: Full support for all 4 bell timbres (*Crystal*, *Keisu*, *Gong*, *Tingsha*) on smartwatches via a compact 2×2 grid tailored for round screens.
@@ -144,7 +144,7 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 ---
 
 ## 🛠️ Technical Architecture & Requirements
-- **Version**: `2.0.3`
+- **Version**: `2.0.4`
 - **UI & Procedural Graphics**: Jetpack Compose Material 3 and native `Canvas` on both Phone and Watch (with optional AGSL `RuntimeShader` on Android 13+ for the candle flame and ~40 fps `withFrameNanos` loops that halt completely when paused or stopped).
 - **16-bit PCM Sound Synthesis**: Real-time 44.1 kHz procedural audio generation with raised-cosine anti-click envelopes via `AudioTrack` for all 4 timbres (**Gong**, **Crystal**, **Keisu**, **Tingsha**) with zero external audio assets.
 - **Languages Supported**: English and Italian (both Phone and Watch).
