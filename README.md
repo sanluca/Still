@@ -11,7 +11,7 @@ Still è un'applicazione open source per Android e Wear OS, concepita per la med
 
 ---
 
-## Novità della Versione 2.0.3
+## Novità della Versione 2.0.4
 - **4 Timbri di Campana Sintetizzati in PCM a 16-bit (Anti-Click)**: Sintesi procedurale con inviluppo cosinusoidale morbido (*raised-cosine*) privo di click elettrici: **Gong** (216 Hz), **Quarzo** (432 Hz), **Keisu** (528 Hz) e **Tingsha** (2640 Hz, cimbali tibetani cristallini con armoniche metalliche inarmoniche e battimento acustico).
 - **Campana Intermedia Indipendente**: Su smartphone puoi ora scegliere un timbro dedicato per i rintocchi intermedi (predefinito su **Tingsha**), distinto dalla campana principale di apertura e chiusura sessione.
 - **Selettore 2×2 su Wear OS**: Supporto completo a tutti e 4 i timbri (*Quarzo*, *Keisu*, *Gong*, *Tingsha*) anche sullo smartwatch con griglia 2×2 ottimizzata per display rotondi.
