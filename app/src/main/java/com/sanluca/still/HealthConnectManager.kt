@@ -33,15 +33,17 @@ class HealthConnectManager(private val context: Context) {
 
     // Verifica se l'utente ha già concesso il permesso di scrittura per la meditazione
     suspend fun hasAllPermissions(): Boolean {
-        if (!isHealthConnectAvailable()) return false
-        val granted = healthConnectClient.permissionController.getGrantedPermissions()
-        return granted.containsAll(permissions)
+        return isHealthConnectAvailable() && try {
+            val granted = healthConnectClient.permissionController.getGrantedPermissions()
+            granted.containsAll(permissions)
+        } catch (_: Exception) {
+            false
+        }
     }
 
     // Registra una sessione di meditazione Vipassana su Google Salute (Health Connect) con registrazione ATTIVA
     suspend fun saveMeditationSession(startTime: Instant, endTime: Instant): Boolean {
-        if (!isHealthConnectAvailable()) return false
-        return try {
+        return isHealthConnectAvailable() && try {
             val record = MindfulnessSessionRecord(
                 startTime = startTime,
                 startZoneOffset = ZoneOffset.systemDefault().rules.getOffset(startTime),
@@ -65,8 +67,7 @@ class HealthConnectManager(private val context: Context) {
 
     // Cancella una sessione specifica da Google Salute in base all'intervallo temporale
     suspend fun deleteMeditationSession(startTime: Instant, endTime: Instant): Boolean {
-        if (!isHealthConnectAvailable()) return false
-        return try {
+        return isHealthConnectAvailable() && try {
             healthConnectClient.deleteRecords(
                 recordType = MindfulnessSessionRecord::class,
                 timeRangeFilter = TimeRangeFilter.between(

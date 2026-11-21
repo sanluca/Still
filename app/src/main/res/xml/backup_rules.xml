@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <include domain="sharedpref" path="still_prefs.xml" />
-    <exclude domain="sharedpref" path="still_prefs.xml:prev_interruption_filter" />
 </full-backup-content>

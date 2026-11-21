@@ -1,7 +1,7 @@
 [versions]
-appVersion = "2.0.4"
-appVersionCode = "200"
-agp = "9.5.1"
+appVersion = "3.0.0"
+appVersionCode = "300"
+agp = "9.5.2"
 coreKtx = "1.10.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"

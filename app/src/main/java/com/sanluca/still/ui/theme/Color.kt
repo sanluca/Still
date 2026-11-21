@@ -39,7 +39,7 @@ data class StillExtendedColors(
 )
 
 // ============================================================================
-// 1. 🌸 PRIMAVERA — Kasane "Sakura", "Yamabuki" & "Yanagi"
+// 1. PRIMAVERA — Kasane "Sakura", "Yamabuki" & "Yanagi"
 // (Rosa Petalo di Ciliegio, Verde Germoglio Vivo, Giallo Polline, Rugiada & Bambù)
 // ============================================================================
 val SpringColorScheme = darkColorScheme(
@@ -80,7 +80,7 @@ val SpringExtendedColors = StillExtendedColors(
 )
 
 // ============================================================================
-// 2. ☀️ ESTATE — Kasane "Nadeshiko", "Shōbu" & Costa Mediterranea
+// 2. ESTATE — Kasane "Nadeshiko", "Shōbu" & Costa Mediterranea
 // (Rosa Ibisco/Corallo, Giallo Sole, Turchese Laguna, Verde Palma & Sabbia d'Oro)
 // ============================================================================
 val SummerColorScheme = darkColorScheme(
@@ -121,7 +121,7 @@ val SummerExtendedColors = StillExtendedColors(
 )
 
 // ============================================================================
-// 3. 🍁 AUTUNNO — Kasane "Momiji", "Ominaeshi" & "Shion"
+// 3. AUTUNNO — Kasane "Momiji", "Ominaeshi" & "Shion"
 // (Acero Cremisi, Oro Ginkgo, Verde Muschio del Bosco, Prugna & Castagno)
 // ============================================================================
 val DarkWarmColorScheme = darkColorScheme(
@@ -162,7 +162,7 @@ val AutumnExtendedColors = StillExtendedColors(
 )
 
 // ============================================================================
-// 4. ❄️ INVERNO — Kasane "Tsubaki" (Camelia nella Neve), "Matsu-gasane" & Baita Alpina
+// 4. INVERNO — Kasane "Tsubaki" (Camelia nella Neve), "Matsu-gasane" & Baita Alpina
 // (Ghiaccio Cristallino, Rosso Camelia/Camino, Verde Abete, Aurora Viola & Legno Caldo)
 // ============================================================================
 val WinterColorScheme = darkColorScheme(
