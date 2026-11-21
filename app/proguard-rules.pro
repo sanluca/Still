@@ -24,3 +24,4 @@
 # 5. Modelli dati interni
 -keep class com.sanluca.still.SessionLogEntry { *; }
 -keep class com.sanluca.still.PendingSessionEntry { *; }
+-keep class com.sanluca.still.MeditationPreset { *; }

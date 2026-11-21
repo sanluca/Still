@@ -18,6 +18,8 @@ private const val KEY_COLOR_PALETTE = "color_palette"
 private const val KEY_HEALTH_CONNECTED = "health_connected"
 private const val KEY_AMBIENT_SOUND = "ambient_soundscape"
 private const val KEY_AMBIENT_VOLUME = "ambient_volume_percent"
+private const val KEY_CUSTOM_AMBIENT_URI = "custom_ambient_uri"
+private const val KEY_CUSTOM_AMBIENT_NAME = "custom_ambient_name"
 internal const val KEY_SESSION_HISTORY = "session_history_list"
 internal const val KEY_PENDING_HEALTH_SESSIONS = "pending_health_sessions"
 
@@ -33,7 +35,7 @@ fun getSavedSelectedTime(context: Context): Int {
     return prefs.getInt(KEY_SELECTED_TIME, 600) // Default 10 minuti (600s)
 }
 
-private fun normalizeBellFrequency(rawFreq: Double, defaultFreq: Double): Double {
+internal fun normalizeBellFrequency(rawFreq: Double, defaultFreq: Double): Double {
     return when {
         rawFreq > 2500.0 -> TINGSHA_FREQ_HZ
         rawFreq in 215.0..217.0 -> 216.0
@@ -175,4 +177,22 @@ fun saveAmbientVolume(context: Context, volumePercent: Int) {
 fun getSavedAmbientVolume(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_AMBIENT_VOLUME, 50).coerceIn(10, 100)
+}
+
+fun saveCustomAmbientAudio(context: Context, uri: String, displayName: String) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit()
+        .putString(KEY_CUSTOM_AMBIENT_URI, uri)
+        .putString(KEY_CUSTOM_AMBIENT_NAME, displayName)
+        .apply()
+}
+
+fun getSavedCustomAmbientUri(context: Context): String? {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getString(KEY_CUSTOM_AMBIENT_URI, null)?.takeIf { it.isNotBlank() }
+}
+
+fun getSavedCustomAmbientName(context: Context): String? {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getString(KEY_CUSTOM_AMBIENT_NAME, null)?.takeIf { it.isNotBlank() }
 }

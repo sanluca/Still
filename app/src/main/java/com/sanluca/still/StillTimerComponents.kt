@@ -50,6 +50,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -124,7 +126,10 @@ fun StillTopBar(
     onOpenSettings: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenPrivacy: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenPresets: () -> Unit = {},
+    activePresetName: String? = null,
+    canSelectPreset: Boolean = true
 ) {
     val stillColors = LocalStillColors.current
     val overtimeColor = stillColors.overtime
@@ -141,19 +146,28 @@ fun StillTopBar(
             color = stillColors.titleColor
         )
         Text(
-            text = if (isPreparing) stringResource(R.string.status_preparing)
-                   else if (isOvertime) stringResource(R.string.status_overtime)
-                   else if (selectedTimeInSeconds == -1) stringResource(R.string.status_no_limit)
-                   else stringResource(R.string.status_timer),
+            text = when {
+                isPreparing -> stringResource(R.string.status_preparing)
+                isOvertime -> stringResource(R.string.status_overtime)
+                activePresetName != null -> activePresetName
+                selectedTimeInSeconds == -1 -> stringResource(R.string.status_no_limit)
+                else -> stringResource(R.string.status_timer)
+            },
             style = MaterialTheme.typography.bodyMedium,
-            color = if (isPreparing) MaterialTheme.colorScheme.tertiary
-                    else if (isOvertime) overtimeColor
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+            color = when {
+                isPreparing -> MaterialTheme.colorScheme.tertiary
+                isOvertime -> overtimeColor
+                activePresetName != null -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Capsula unificata per i 3 pulsanti (Impostazioni, Statistiche, Info)
+        val presetsContentDesc = stringResource(R.string.cd_presets_button)
+        // Capsula unificata per i 4 pulsanti (Preset, Impostazioni, Statistiche, Info)
         Row(
             modifier = Modifier
                 .background(
@@ -169,6 +183,27 @@ fun StillTopBar(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(
+                onClick = onOpenPresets,
+                enabled = canSelectPreset,
+                modifier = Modifier
+                    .size(40.dp)
+                    .alpha(if (canSelectPreset) 1f else 0.35f)
+                    .semantics { contentDescription = presetsContentDesc }
+            ) {
+                Text(
+                    text = "P",
+                    fontSize = 17.sp,
+                    fontWeight = if (activePresetName != null) FontWeight.Bold else FontWeight.SemiBold,
+                    color = if (activePresetName != null) MaterialTheme.colorScheme.primary else stillColors.titleColor
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(18.dp)
+                    .background(MaterialTheme.colorScheme.outline)
+            )
             IconButton(
                 onClick = onOpenSettings,
                 modifier = Modifier.size(40.dp)

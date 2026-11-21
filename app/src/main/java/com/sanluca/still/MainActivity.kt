@@ -107,6 +107,10 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             var selectedPalette by remember { mutableStateOf(getSavedColorPalette(this)) }
+            var presetPaletteOverride by remember {
+                mutableStateOf(getActivePreset(this)?.effectiveColorPalette())
+            }
+            val effectivePalette = presetPaletteOverride ?: selectedPalette
             val snackbarHostState = remember { SnackbarHostState() }
             val updateReadyMsg = stringResource(R.string.update_ready_message)
             val updateReadyAction = stringResource(R.string.update_ready_action)
@@ -135,7 +139,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            StillTheme(palette = selectedPalette) {
+            StillTheme(palette = effectivePalette) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
@@ -148,7 +152,10 @@ class MainActivity : ComponentActivity() {
                             saveColorPalette(this, newPalette)
                         },
                         showHealthRationale = showHealthRationaleState.value,
-                        onDismissHealthRationale = { showHealthRationaleState.value = false }
+                        onDismissHealthRationale = { showHealthRationaleState.value = false },
+                        onPresetPaletteOverrideChange = { overridePalette ->
+                            presetPaletteOverride = overridePalette
+                        }
                     )
                 }
             }
@@ -181,7 +188,9 @@ class MainActivity : ComponentActivity() {
             if (StillTimerService.isRunning) {
                 stopService(Intent(this, StillTimerService::class.java))
             } else if (StillTimerService.timerState.value.isPaused) {
-                StillTimerService.resetState(getSavedSelectedTime(this))
+                StillTimerService.resetState(
+                    getActivePreset(this)?.durationSeconds ?: getSavedSelectedTime(this)
+                )
             }
         }
         super.onDestroy()
@@ -221,7 +230,8 @@ fun MeditationTimerScreen(
     selectedPalette: StillColorPalette = StillColorPalette.AUTUMN,
     onPaletteSelected: (StillColorPalette) -> Unit = {},
     showHealthRationale: Boolean = false,
-    onDismissHealthRationale: () -> Unit = {}
+    onDismissHealthRationale: () -> Unit = {},
+    onPresetPaletteOverrideChange: (StillColorPalette?) -> Unit = {}
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext ?: context
@@ -247,6 +257,17 @@ fun MeditationTimerScreen(
     }
 
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showPresetPickerDialog by remember { mutableStateOf(false) }
+    var showPresetManagerDialog by remember { mutableStateOf(false) }
+    var presets by remember { mutableStateOf(getSavedPresets(context)) }
+    var activePresetId by remember { mutableStateOf(getActivePresetId(context)) }
+    val activePreset = remember(presets, activePresetId) {
+        presets.firstOrNull { it.id == activePresetId }
+    }
+    LaunchedEffect(activePreset) {
+        onPresetPaletteOverrideChange(activePreset?.effectiveColorPalette())
+    }
+
     var isResyncing by remember { mutableStateOf(false) }
     var showStatsDialog by remember { mutableStateOf(false) }
     var selectedCalendarDate by remember { mutableStateOf<LocalDate?>(null) }
@@ -440,7 +461,7 @@ fun MeditationTimerScreen(
     var selectedTimeInSeconds by remember {
         mutableIntStateOf(
             if (hasActiveServiceSession) initialServiceSnapshot.selectedTimeSeconds
-            else getSavedSelectedTime(context)
+            else activePreset?.durationSeconds ?: getSavedSelectedTime(context)
         )
     }
     var activeSessionPlannedSeconds by remember {
@@ -450,7 +471,10 @@ fun MeditationTimerScreen(
         )
     }
     var lastTimedSeconds by remember {
-        mutableIntStateOf(if (selectedTimeInSeconds > 0) selectedTimeInSeconds else 600)
+        mutableIntStateOf(
+            if (selectedTimeInSeconds > 0) selectedTimeInSeconds
+            else getSavedSelectedTime(context).takeIf { it > 0 } ?: 600
+        )
     }
     
     var prepTimeSeconds by remember { mutableIntStateOf(getSavedPrepTime(context)) }
@@ -463,6 +487,28 @@ fun MeditationTimerScreen(
     var timerStyle by remember { mutableIntStateOf(getSavedTimerStyle(context)) }
     var ambientSoundscape by remember { mutableStateOf(getSavedAmbientSoundscape(context)) }
     var ambientVolumePercent by remember { mutableIntStateOf(getSavedAmbientVolume(context)) }
+    var customAmbientUri by remember { mutableStateOf(getSavedCustomAmbientUri(context)) }
+    var customAmbientName by remember { mutableStateOf(getSavedCustomAmbientName(context)) }
+
+    val effectivePrepSeconds = activePreset?.prepSeconds ?: prepTimeSeconds
+    val effectiveGongFreqHz = activePreset?.gongFreqHz ?: gongFreqHz
+    val effectiveIntervalGongFreqHz = activePreset?.intervalGongFreqHz ?: intervalGongFreqHz
+    val effectiveGongVolumePercent = activePreset?.gongVolumePercent ?: gongVolumePercent
+    val effectiveAlertMode = activePreset?.alertMode ?: alertMode
+    val effectiveIntervalMins = activePreset?.intervalMins ?: intervalMins
+    val effectiveAutoDndEnabled = activePreset?.autoDndEnabled ?: autoDndEnabled
+    val effectiveTimerStyle = activePreset?.timerStyle ?: timerStyle
+    val effectiveAmbientSoundscape = activePreset?.effectiveAmbientSoundscape() ?: ambientSoundscape
+    val effectiveAmbientVolumePercent = activePreset?.ambientVolumePercent ?: ambientVolumePercent
+    val effectiveCustomAmbientUri = if (activePreset?.ambientSoundId != null) {
+        if (effectiveAmbientSoundscape == AmbientSoundscape.CUSTOM) {
+            activePreset.customAmbientUri ?: customAmbientUri
+        } else {
+            null
+        }
+    } else {
+        customAmbientUri
+    }
 
     var isPreparing by remember {
         mutableStateOf(hasActiveServiceSession && initialServiceSnapshot.isPreparing)
@@ -526,18 +572,19 @@ fun MeditationTimerScreen(
         val intent = if (!isResuming) {
             Intent(context, StillTimerService::class.java).apply {
                 action = "START"
-                putExtra("FREQ", gongFreqHz)
-                putExtra("INTERVAL_FREQ", intervalGongFreqHz)
-                putExtra("VOLUME", gongVolumePercent)
-                putExtra("ALERT_MODE", alertMode)
-                putExtra("INTERVAL", intervalMins)
+                putExtra("FREQ", effectiveGongFreqHz)
+                putExtra("INTERVAL_FREQ", effectiveIntervalGongFreqHz)
+                putExtra("VOLUME", effectiveGongVolumePercent)
+                putExtra("ALERT_MODE", effectiveAlertMode)
+                putExtra("INTERVAL", effectiveIntervalMins)
                 putExtra("TIME", selectedTimeInSeconds)
                 putExtra("PLANNED_TIME", selectedTimeInSeconds)
                 putExtra("SELECTED_TIME", selectedTimeInSeconds)
-                putExtra("PREP", prepTimeSeconds)
-                putExtra("DND", autoDndEnabled)
-                putExtra("AMBIENT_SOUND", ambientSoundscape.id)
-                putExtra("AMBIENT_VOLUME", ambientVolumePercent)
+                putExtra("PREP", effectivePrepSeconds)
+                putExtra("DND", effectiveAutoDndEnabled)
+                putExtra("AMBIENT_SOUND", effectiveAmbientSoundscape.id)
+                putExtra("AMBIENT_VOLUME", effectiveAmbientVolumePercent)
+                putExtra("AMBIENT_CUSTOM_URI", effectiveCustomAmbientUri)
             }
         } else {
             val elapsedBeforePause = if (activeSessionPlannedSeconds == -1) {
@@ -549,26 +596,27 @@ fun MeditationTimerScreen(
                 action = "START"
                 putExtra("RESUME", true)
                 putExtra("ELAPSED_OFFSET", elapsedBeforePause)
-                putExtra("FREQ", gongFreqHz)
-                putExtra("INTERVAL_FREQ", intervalGongFreqHz)
-                putExtra("VOLUME", gongVolumePercent)
-                putExtra("ALERT_MODE", alertMode)
-                putExtra("INTERVAL", intervalMins)
+                putExtra("FREQ", effectiveGongFreqHz)
+                putExtra("INTERVAL_FREQ", effectiveIntervalGongFreqHz)
+                putExtra("VOLUME", effectiveGongVolumePercent)
+                putExtra("ALERT_MODE", effectiveAlertMode)
+                putExtra("INTERVAL", effectiveIntervalMins)
                 putExtra("TIME", if (activeSessionPlannedSeconds == -1) -1 else timeLeftInSeconds)
                 putExtra("PLANNED_TIME", activeSessionPlannedSeconds)
                 putExtra("SELECTED_TIME", selectedTimeInSeconds)
-                putExtra("DND", autoDndEnabled)
-                putExtra("AMBIENT_SOUND", ambientSoundscape.id)
-                putExtra("AMBIENT_VOLUME", ambientVolumePercent)
+                putExtra("DND", effectiveAutoDndEnabled)
+                putExtra("AMBIENT_SOUND", effectiveAmbientSoundscape.id)
+                putExtra("AMBIENT_VOLUME", effectiveAmbientVolumePercent)
+                putExtra("AMBIENT_CUSTOM_URI", effectiveCustomAmbientUri)
             }
         }
 
         try {
             hasStartedFromUi = true
             isTimerRunning = true
-            if (!isResuming && prepTimeSeconds > 0) {
+            if (!isResuming && effectivePrepSeconds > 0) {
                 isPreparing = true
-                prepTimeLeftSeconds = prepTimeSeconds
+                prepTimeLeftSeconds = effectivePrepSeconds
             }
             context.startForegroundService(intent)
         } catch (_: Exception) {
@@ -588,14 +636,51 @@ fun MeditationTimerScreen(
         }
     }
 
-    fun sendAmbientUpdateToService(sound: AmbientSoundscape, volume: Int) {
+    fun sendAmbientUpdateToService(
+        sound: AmbientSoundscape,
+        volume: Int,
+        customUri: String? = customAmbientUri
+    ) {
         if (StillTimerService.isRunning) {
             val updateIntent = Intent(context, StillTimerService::class.java).apply {
                 action = "UPDATE_AMBIENT"
                 putExtra("AMBIENT_SOUND", sound.id)
                 putExtra("AMBIENT_VOLUME", volume)
+                putExtra("AMBIENT_CUSTOM_URI", customUri)
             }
             context.startService(updateIntent)
+        }
+    }
+
+    val pickCustomAudioLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val displayName = resolveAudioDisplayName(appContext, uri)
+            ?: appContext.getString(R.string.ambient_sound_custom)
+        if (!isSupportedCustomAudio(appContext, uri, displayName)) {
+            Toast.makeText(
+                appContext,
+                appContext.getString(R.string.toast_custom_audio_unsupported),
+                Toast.LENGTH_LONG
+            ).show()
+            return@rememberLauncherForActivityResult
+        }
+        try {
+            appContext.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: Exception) {
+        }
+        val uriString = uri.toString()
+        saveCustomAmbientAudio(appContext, uriString, displayName)
+        customAmbientUri = uriString
+        customAmbientName = displayName
+        ambientSoundscape = AmbientSoundscape.CUSTOM
+        saveAmbientSoundscape(appContext, AmbientSoundscape.CUSTOM)
+        if (activePreset?.ambientSoundId == null) {
+            sendAmbientUpdateToService(AmbientSoundscape.CUSTOM, effectiveAmbientVolumePercent, uriString)
         }
     }
 
@@ -609,7 +694,9 @@ fun MeditationTimerScreen(
         isOvertime = false
         overtimeSeconds = 0
         sessionStartTime = null
-        saveSelectedTime(context, newTime)
+        if (activePreset == null) {
+            saveSelectedTime(context, newTime)
+        }
     }
 
     fun adjustActiveTimer(deltaSeconds: Int) {
@@ -680,6 +767,29 @@ fun MeditationTimerScreen(
     }
 
     val isInitialState = !isTimerRunning && !isOvertime && sessionStartTime == null
+
+    fun syncIdleDurationForPreset(targetPreset: MeditationPreset?) {
+        if (!isInitialState) return
+        val targetTime = targetPreset?.durationSeconds ?: getSavedSelectedTime(context)
+        if (targetTime > 0) {
+            lastTimedSeconds = targetTime
+        }
+        selectedTimeInSeconds = targetTime
+        activeSessionPlannedSeconds = targetTime
+        timeLeftInSeconds = if (targetTime == -1) 0 else targetTime
+        isOvertime = false
+        overtimeSeconds = 0
+        sessionStartTime = null
+        if (!StillTimerService.isRunning && !StillTimerService.timerState.value.isPaused) {
+            StillTimerService.resetState(targetTime)
+        }
+    }
+
+    fun applyPresetSelection(presetId: String?) {
+        activePresetId = presetId
+        saveActivePresetId(context, presetId)
+        syncIdleDurationForPreset(presets.firstOrNull { it.id == presetId })
+    }
 
     fun resetTimerState() {
         cancelGongVibration(context)
@@ -779,7 +889,10 @@ fun MeditationTimerScreen(
                     }
                     showStatsDialog = true
                 },
-                onOpenPrivacy = { showPrivacyDialog = true }
+                onOpenPrivacy = { showPrivacyDialog = true },
+                onOpenPresets = { showPresetPickerDialog = true },
+                activePresetName = activePreset?.name,
+                canSelectPreset = isInitialState
             )
 
             StillTimerCenterStage(
@@ -787,7 +900,7 @@ fun MeditationTimerScreen(
                 isPreparing = isPreparing,
                 isOvertime = isOvertime,
                 isInitialState = isInitialState,
-                timerStyle = timerStyle,
+                timerStyle = effectiveTimerStyle,
                 selectedTimeInSeconds = selectedTimeInSeconds,
                 activeSessionPlannedSeconds = activeSessionPlannedSeconds,
                 timeLeftInSeconds = timeLeftInSeconds,
@@ -907,14 +1020,93 @@ fun MeditationTimerScreen(
                 onAmbientSoundscapeChange = { sound ->
                     ambientSoundscape = sound
                     saveAmbientSoundscape(context, sound)
-                    sendAmbientUpdateToService(sound, ambientVolumePercent)
+                    if (activePreset?.ambientSoundId == null) {
+                        sendAmbientUpdateToService(sound, effectiveAmbientVolumePercent, customAmbientUri)
+                    }
                 },
                 ambientVolumePercent = ambientVolumePercent,
                 onAmbientVolumeChange = { vol ->
                     ambientVolumePercent = vol
                     saveAmbientVolume(context, vol)
-                    sendAmbientUpdateToService(ambientSoundscape, vol)
-                }
+                    if (activePreset?.ambientVolumePercent == null) {
+                        sendAmbientUpdateToService(effectiveAmbientSoundscape, vol, effectiveCustomAmbientUri)
+                    }
+                },
+                customAmbientUri = customAmbientUri,
+                customAmbientName = customAmbientName,
+                onPickCustomAudio = {
+                    pickCustomAudioLauncher.launch(arrayOf("audio/mpeg", "audio/ogg", "application/ogg"))
+                },
+                presetCount = presets.size,
+                onOpenPresetManager = { showPresetManagerDialog = true }
+            )
+        }
+
+        // --- DIALOG SELEZIONE RAPIDA PRESET ("P") ---
+        if (showPresetPickerDialog) {
+            StillPresetPickerDialog(
+                presets = presets,
+                activePresetId = activePresetId,
+                onSelectPreset = { selectedId -> applyPresetSelection(selectedId) },
+                onOpenManager = { showPresetManagerDialog = true },
+                onDismiss = { showPresetPickerDialog = false }
+            )
+        }
+
+        // --- DIALOG GESTIONE / CREAZIONE PRESET ---
+        if (showPresetManagerDialog) {
+            val currentGlobalSnapshot = MeditationPreset(
+                name = "",
+                durationSeconds = getSavedSelectedTime(context),
+                prepSeconds = prepTimeSeconds,
+                gongFreqHz = gongFreqHz,
+                gongVolumePercent = gongVolumePercent,
+                alertMode = alertMode,
+                intervalMins = intervalMins,
+                intervalGongFreqHz = intervalGongFreqHz,
+                ambientSoundId = ambientSoundscape.id,
+                ambientVolumePercent = ambientVolumePercent,
+                customAmbientUri = if (ambientSoundscape == AmbientSoundscape.CUSTOM) customAmbientUri else null,
+                customAmbientName = if (ambientSoundscape == AmbientSoundscape.CUSTOM) customAmbientName else null,
+                timerStyle = timerStyle,
+                colorPaletteId = selectedPalette.id,
+                autoDndEnabled = autoDndEnabled
+            )
+            StillPresetManagerDialog(
+                presets = presets,
+                activePresetId = activePresetId,
+                currentGlobalSnapshot = currentGlobalSnapshot,
+                onSavePreset = { editedPreset ->
+                    val updated = savePreset(context, editedPreset)
+                    presets = updated
+                    if (editedPreset.id == activePresetId) {
+                        val refreshed = updated.firstOrNull { it.id == editedPreset.id }
+                        syncIdleDurationForPreset(refreshed)
+                        if (StillTimerService.isRunning && refreshed != null) {
+                            val liveSound = refreshed.effectiveAmbientSoundscape() ?: ambientSoundscape
+                            val liveVolume = refreshed.ambientVolumePercent ?: ambientVolumePercent
+                            val liveCustomUri = if (refreshed.ambientSoundId != null) {
+                                if (liveSound == AmbientSoundscape.CUSTOM) {
+                                    refreshed.customAmbientUri ?: customAmbientUri
+                                } else {
+                                    null
+                                }
+                            } else {
+                                customAmbientUri
+                            }
+                            sendAmbientUpdateToService(liveSound, liveVolume, liveCustomUri)
+                        }
+                    }
+                },
+                onDeletePreset = { deletedId ->
+                    val updated = deletePreset(context, deletedId)
+                    presets = updated
+                    if (activePresetId == deletedId) {
+                        activePresetId = null
+                        syncIdleDurationForPreset(null)
+                    }
+                },
+                onDismiss = { showPresetManagerDialog = false }
             )
         }
 

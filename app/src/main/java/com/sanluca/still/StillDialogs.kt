@@ -2,6 +2,7 @@ package com.sanluca.still
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sanluca.still.ui.theme.StillColorPalette
@@ -69,6 +71,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -83,7 +86,7 @@ import kotlin.math.roundToInt
 private const val PRIVACY_POLICY_URL = "https://github.com/sanluca/still/blob/master/PRIVACY.md"
 
 // Campane "soft" (frequenza-identificativo, nome visualizzato)
-private val SOFT_BELL_CHOICES = listOf(
+internal val SOFT_BELL_CHOICES = listOf(
     CHIME_FREQ_HZ to R.string.bell_name_chime,
     WATER_BOWL_FREQ_HZ to R.string.bell_name_water_bowl,
     SOFT_BOWL_FREQ_HZ to R.string.bell_name_soft_bowl,
@@ -120,7 +123,12 @@ fun StillSettingsDialog(
     ambientSoundscape: AmbientSoundscape = AmbientSoundscape.OFF,
     onAmbientSoundscapeChange: (AmbientSoundscape) -> Unit = {},
     ambientVolumePercent: Int = 50,
-    onAmbientVolumeChange: (Int) -> Unit = {}
+    onAmbientVolumeChange: (Int) -> Unit = {},
+    customAmbientUri: String? = null,
+    customAmbientName: String? = null,
+    onPickCustomAudio: () -> Unit = {},
+    presetCount: Int = 0,
+    onOpenPresetManager: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -130,6 +138,11 @@ fun StillSettingsDialog(
     var previewGongJob by remember { mutableStateOf<Job?>(null) }
     val previewAmbientPlayer = remember(coroutineScope) { AmbientSoundPlayer(coroutineScope) }
     var previewAmbientJob by remember { mutableStateOf<Job?>(null) }
+    var customAudioAvailable by remember(customAmbientUri) {
+        mutableStateOf(!customAmbientUri.isNullOrBlank())
+    }
+    var lastPreviewedCustomUri by remember { mutableStateOf(customAmbientUri) }
+    val toastCustomAudioMissingMsg = stringResource(R.string.toast_custom_audio_missing)
 
     DisposableEffect(Unit) {
         onDispose {
@@ -139,7 +152,11 @@ fun StillSettingsDialog(
         }
     }
 
-    fun playPreviewAmbient(soundscape: AmbientSoundscape, vol: Int = ambientVolumePercent) {
+    fun playPreviewAmbient(
+        soundscape: AmbientSoundscape,
+        vol: Int = ambientVolumePercent,
+        uriOverride: String? = customAmbientUri
+    ) {
         previewAmbientJob?.cancel()
         if (StillTimerService.isRunning) {
             previewAmbientPlayer.stopImmediate()
@@ -155,10 +172,29 @@ fun StillSettingsDialog(
                 soundscape = soundscape,
                 volumePercent = vol,
                 fadeInSeconds = 0.6,
-                fadeOutSeconds = 0.9
+                fadeOutSeconds = 0.9,
+                customUri = uriOverride,
+                onPlaybackError = {
+                    if (soundscape == AmbientSoundscape.CUSTOM) {
+                        customAudioAvailable = false
+                        Toast.makeText(context, toastCustomAudioMissingMsg, Toast.LENGTH_LONG).show()
+                    }
+                }
             )
             delay(4200L)
             previewAmbientPlayer.stop(fadeOutSeconds = 0.9)
+        }
+    }
+
+    LaunchedEffect(customAmbientUri) {
+        val readable = !customAmbientUri.isNullOrBlank() &&
+            withContext(Dispatchers.IO) { isAudioUriReadable(context, customAmbientUri) }
+        customAudioAvailable = readable
+        if (customAmbientUri != lastPreviewedCustomUri) {
+            lastPreviewedCustomUri = customAmbientUri
+            if (readable && ambientSoundscape == AmbientSoundscape.CUSTOM) {
+                playPreviewAmbient(AmbientSoundscape.CUSTOM, ambientVolumePercent, customAmbientUri)
+            }
         }
     }
 
@@ -201,6 +237,52 @@ fun StillSettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // 0. PRESET DI MEDITAZIONE
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(
+                                text = stringResource(R.string.settings_presets_title),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = when (presetCount) {
+                                    0 -> stringResource(R.string.settings_presets_count_zero)
+                                    1 -> stringResource(R.string.settings_presets_count_one)
+                                    else -> stringResource(R.string.settings_presets_count_many, presetCount)
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                previewGongJob?.cancel()
+                                previewAmbientJob?.cancel()
+                                previewAmbientPlayer.stopImmediate()
+                                onOpenPresetManager()
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.settings_presets_manage),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+
                 // 1. RITARDO PREPARAZIONE E CAMPANE INTERMEDIE IN CARD AUTUNNALE
                 Card(
                     shape = RoundedCornerShape(16.dp),
@@ -472,19 +554,87 @@ fun StillSettingsDialog(
                         ) {
                             listOf(
                                 AmbientSoundscape.OFF to R.string.ambient_sound_off,
-                                AmbientSoundscape.RAIN to R.string.ambient_sound_rain,
+                                AmbientSoundscape.LIGHT_RAIN to R.string.ambient_sound_light_rain,
+                                AmbientSoundscape.GENTLE_RAIN to R.string.ambient_sound_gentle_rain,
+                                AmbientSoundscape.BIRDS_RAIN to R.string.ambient_sound_birds_rain,
                                 AmbientSoundscape.OCEAN to R.string.ambient_sound_ocean,
-                                AmbientSoundscape.WIND to R.string.ambient_sound_wind,
-                                AmbientSoundscape.DRONE to R.string.ambient_sound_drone
+                                AmbientSoundscape.RIVER to R.string.ambient_sound_river,
+                                AmbientSoundscape.FOREST to R.string.ambient_sound_forest,
+                                AmbientSoundscape.DRONE to R.string.ambient_sound_drone,
+                                AmbientSoundscape.CUSTOM to R.string.ambient_sound_custom
                             ).forEach { (soundOption, labelRes) ->
                                 FilterChip(
                                     selected = ambientSoundscape == soundOption,
                                     onClick = {
-                                        onAmbientSoundscapeChange(soundOption)
-                                        playPreviewAmbient(soundOption, ambientVolumePercent)
+                                        if (soundOption == AmbientSoundscape.CUSTOM) {
+                                            when {
+                                                customAmbientUri.isNullOrBlank() -> onPickCustomAudio()
+                                                !customAudioAvailable -> {
+                                                    Toast.makeText(
+                                                        context,
+                                                        toastCustomAudioMissingMsg,
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                    onPickCustomAudio()
+                                                }
+                                                else -> {
+                                                    onAmbientSoundscapeChange(soundOption)
+                                                    playPreviewAmbient(soundOption, ambientVolumePercent)
+                                                }
+                                            }
+                                        } else {
+                                            onAmbientSoundscapeChange(soundOption)
+                                            playPreviewAmbient(soundOption, ambientVolumePercent)
+                                        }
                                     },
                                     label = { Text(stringResource(labelRes), fontSize = 12.sp) }
                                 )
+                            }
+                        }
+
+                        if (ambientSoundscape == AmbientSoundscape.CUSTOM) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val fileLabel = when {
+                                    customAmbientUri.isNullOrBlank() -> stringResource(R.string.settings_custom_audio_choose)
+                                    !customAudioAvailable -> stringResource(R.string.settings_custom_audio_missing)
+                                    else -> customAmbientName ?: stringResource(R.string.ambient_sound_custom)
+                                }
+                                Text(
+                                    text = fileLabel,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (!customAmbientUri.isNullOrBlank() && !customAudioAvailable) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 8.dp)
+                                )
+                                OutlinedButton(
+                                    onClick = onPickCustomAudio,
+                                    shape = RoundedCornerShape(14.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(34.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(
+                                            if (customAmbientUri.isNullOrBlank()) {
+                                                R.string.settings_custom_audio_choose
+                                            } else {
+                                                R.string.settings_custom_audio_change
+                                            }
+                                        ),
+                                        fontSize = 12.sp
+                                    )
+                                }
                             }
                         }
 
@@ -794,6 +944,8 @@ fun StillSettingsDialog(
             Button(
                 onClick = {
                     previewGongJob?.cancel()
+                    previewAmbientJob?.cancel()
+                    previewAmbientPlayer.stopImmediate()
                     onDismiss()
                 },
                 shape = RoundedCornerShape(20.dp)
@@ -862,6 +1014,13 @@ fun HealthPrivacyRationaleDialog(onDismiss: () -> Unit) {
                 ) {
                     Text(stringResource(R.string.privacy_dialog_button_policy))
                 }
+                Text(
+                    text = stringResource(R.string.privacy_dialog_audio_credits),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Text(
                     text = stringResource(R.string.settings_app_version, BuildConfig.VERSION_NAME),
                     style = MaterialTheme.typography.bodySmall,

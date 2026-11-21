@@ -50,6 +50,7 @@ class StillTimerService : Service() {
     @Volatile private var currentSelectedSeconds = 600
     @Volatile private var currentAmbientSoundscape = AmbientSoundscape.OFF
     @Volatile private var currentAmbientVolume = 50
+    @Volatile private var currentCustomAmbientUri: String? = null
     @Volatile private var isInPreparationPhase = false
     @Volatile private var isStoppingForPause = false
 
@@ -148,6 +149,7 @@ class StillTimerService : Service() {
             val alertMode = intent.getIntExtra("ALERT_MODE", ALERT_MODE_BOTH)
             currentAmbientSoundscape = AmbientSoundscape.fromId(intent.getStringExtra("AMBIENT_SOUND"))
             currentAmbientVolume = intent.getIntExtra("AMBIENT_VOLUME", 50).coerceIn(10, 100)
+            currentCustomAmbientUri = intent.getStringExtra("AMBIENT_CUSTOM_URI") ?: getSavedCustomAmbientUri(this)
 
             val plannedTime = intent.getIntExtra("PLANNED_TIME", selectedTime)
             val originalSelectedTime = intent.getIntExtra("SELECTED_TIME", plannedTime)
@@ -165,13 +167,20 @@ class StillTimerService : Service() {
         } else if (intent?.action == "UPDATE_AMBIENT") {
             val newSoundscape = AmbientSoundscape.fromId(intent.getStringExtra("AMBIENT_SOUND"))
             val newVolume = intent.getIntExtra("AMBIENT_VOLUME", currentAmbientVolume).coerceIn(10, 100)
+            val newCustomUri = intent.getStringExtra("AMBIENT_CUSTOM_URI") ?: getSavedCustomAmbientUri(this)
             currentAmbientSoundscape = newSoundscape
             currentAmbientVolume = newVolume
+            currentCustomAmbientUri = newCustomUri
             if (isTimerRunning && !isInPreparationPhase) {
                 when {
                     newSoundscape == AmbientSoundscape.OFF -> ambientPlayer.stop()
-                    ambientPlayer.isPlayingSoundscape(newSoundscape) -> ambientPlayer.setVolumePercent(newVolume)
-                    else -> ambientPlayer.switchSoundscape(this, newSoundscape, newVolume)
+                    ambientPlayer.isPlayingSoundscape(newSoundscape, newCustomUri) -> ambientPlayer.setVolumePercent(newVolume)
+                    else -> ambientPlayer.switchSoundscape(
+                        context = this,
+                        soundscape = newSoundscape,
+                        volumePercent = newVolume,
+                        customUri = newCustomUri
+                    )
                 }
             }
         } else if (intent?.action == "ADJUST_TIME") {
@@ -348,7 +357,8 @@ class StillTimerService : Service() {
                     ambientPlayer.start(
                         context = this@StillTimerService,
                         soundscape = ambientChoice,
-                        volumePercent = currentAmbientVolume
+                        volumePercent = currentAmbientVolume,
+                        customUri = currentCustomAmbientUri
                     )
                 }
 

@@ -1,22 +1,40 @@
 package com.sanluca.still
 
+import android.content.ContentResolver
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.OpenableColumns
+import androidx.annotation.RawRes
+import androidx.core.net.toUri
+import androidx.media3.common.AudioAttributes as Media3AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -57,61 +75,75 @@ internal fun normalizeSoftBellFrequency(rawFreq: Double): Double? = when (softBe
     SoftBell.NONE -> null
 }
 
-enum class AmbientSoundscape(val id: String) {
+enum class AmbientSoundscape(val id: String, @param:RawRes val rawResId: Int? = null) {
     OFF("off"),
-    RAIN("rain"),
-    OCEAN("ocean"),
-    WIND("wind"),
-    DRONE("drone");
+    LIGHT_RAIN("light_rain", R.raw.liecio_light_rain_109591),
+    GENTLE_RAIN("gentle_rain", R.raw.eryliaa_gentle_rain_for_relaxation_and_sleep_337279),
+    BIRDS_RAIN("birds_rain", R.raw.nikvideomaker_uccelli_e_la_pioggia_252092),
+    OCEAN("ocean", R.raw.places_atmosphere_nature_onde_del_mare_sulla_spiaggia_379986),
+    RIVER("river", R.raw.nils_vega_river_sounds_547976),
+    FOREST("forest", R.raw.soundreality_nature_forest_sound_537925),
+    DRONE("drone"),
+    CUSTOM("custom");
 
     companion object {
-        fun fromId(id: String?): AmbientSoundscape =
-            entries.firstOrNull { it.id == id } ?: OFF
+        fun fromId(id: String?): AmbientSoundscape = when (id) {
+            "rain" -> LIGHT_RAIN
+            "wind" -> OFF
+            else -> entries.firstOrNull { it.id == id } ?: OFF
+        }
     }
 }
 
-private class FastXorShiftRng(seed: Long) {
-    private var state: Long = if (seed == 0L) 0x5E3779B97F4A7C15L else seed
+private val SUPPORTED_CUSTOM_AUDIO_MIMES = setOf(
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/ogg",
+    "application/ogg",
+    "audio/x-ogg",
+    "audio/vorbis",
+    "audio/opus"
+)
 
-    fun nextDoubleSigned(): Double {
-        var x = state
-        x = x xor (x shl 13)
-        x = x xor (x ushr 7)
-        x = x xor (x shl 17)
-        state = x
-        return ((x ushr 11) * (1.0 / (1L shl 53).toDouble())) * 2.0 - 1.0
+internal fun resolveAudioDisplayName(context: Context, uri: Uri): String? {
+    try {
+        context.contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && cursor.moveToFirst()) {
+                val name = cursor.getString(idx)
+                if (!name.isNullOrBlank()) return name
+            }
+        }
+    } catch (_: Exception) {
     }
-
-    fun nextDoubleUnit(): Double {
-        return (nextDoubleSigned() + 1.0) * 0.5
-    }
+    return uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
 }
 
-private class VossPinkNoise7(seed: Long) {
-    private val rng = FastXorShiftRng(seed)
-    private val rows = DoubleArray(7)
-    private var runningSum = 0.0
-    private var counter = 0
-
-    init {
-        for (i in 0 until 7) {
-            val v = rng.nextDoubleSigned()
-            rows[i] = v
-            runningSum += v
-        }
+internal fun isSupportedCustomAudio(context: Context, uri: Uri, displayName: String? = null): Boolean {
+    val mime = try {
+        context.contentResolver.getType(uri)?.lowercase(Locale.ROOT)
+    } catch (_: Exception) {
+        null
     }
+    if (mime != null && mime in SUPPORTED_CUSTOM_AUDIO_MIMES) return true
+    val candidateName = (displayName ?: resolveAudioDisplayName(context, uri) ?: uri.lastPathSegment)
+        ?.lowercase(Locale.ROOT)
+        ?: return false
+    return candidateName.endsWith(".mp3") || candidateName.endsWith(".ogg")
+}
 
-    fun next(): Double {
-        counter++
-        val row = Integer.numberOfTrailingZeros(counter)
-        if (row < 7) {
-            runningSum -= rows[row]
-            val newVal = rng.nextDoubleSigned()
-            rows[row] = newVal
-            runningSum += newVal
-        }
-        val white = rng.nextDoubleSigned()
-        return (runningSum + white) * 0.125
+internal fun isAudioUriReadable(context: Context, uriString: String?): Boolean {
+    return !uriString.isNullOrBlank() && try {
+        val uri = uriString.toUri()
+        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+    } catch (_: Exception) {
+        false
     }
 }
 
@@ -140,21 +172,6 @@ private class BiquadFilter {
         a2 = (1.0 - alpha) * invA0
     }
 
-    fun setBandPass(freqHz: Double, q: Double, sampleRate: Double) {
-        val f = freqHz.coerceIn(40.0, sampleRate * 0.42)
-        val clampedQ = q.coerceIn(0.3, 12.0)
-        val w0 = 2.0 * PI * f / sampleRate
-        val cosW0 = cos(w0)
-        val sinW0 = sin(w0)
-        val alpha = sinW0 / (2.0 * clampedQ)
-        val invA0 = 1.0 / (1.0 + alpha)
-        b0 = alpha * invA0
-        b1 = 0.0
-        b2 = -alpha * invA0
-        a1 = (-2.0 * cosW0) * invA0
-        a2 = (1.0 - alpha) * invA0
-    }
-
     fun process(input: Double): Double {
         val out = b0 * input + z1
         z1 = b1 * input - a1 * out + z2
@@ -164,11 +181,12 @@ private class BiquadFilter {
 }
 
 /**
- * Generatore procedurale stereofonico continuo in streaming (44.1 kHz, 16-bit PCM stereo)
- * per i 4 sottofondi meditativi (Pioggia, Onde, Vento, Bordone 136.1 Hz).
- * Opera interamente senza allocazioni nel ciclo di sintesi, con dissolvenze raised-cosine,
- * curva di volume quadratica percettiva, ducking morbido durante le campane e rilascio
- * garantito di AudioTrack senza modificare il volume hardware globale del telefono.
+ * Motore audio ibrido per i sottofondi meditativi su smartphone:
+ * - File .ogg integrati (Pixabay) e tracce locali scelte dall'utente (.mp3/.ogg) in loop continuo
+ *   senza stacchi tramite Jetpack Media3 ExoPlayer.
+ * - Bordone continuo a 136.1 Hz (frequenza Om) sintetizzato in streaming PCM 16-bit stereo via AudioTrack.
+ * Supporta dissolvenze raised-cosine (fade-in/fade-out), curva di volume quadratica percettiva,
+ * ducking morbido durante le campane e rilascio garantito delle risorse senza toccare il volume di sistema.
  */
 class AmbientSoundPlayer(
     private val scope: CoroutineScope
@@ -176,8 +194,10 @@ class AmbientSoundPlayer(
     private val controlLock = Any()
     private var streamJob: Job? = null
     private var switchJob: Job? = null
+    private var activeExoHandle: Pair<ExoPlayer, AtomicBoolean>? = null
 
     @Volatile private var activeSoundscape: AmbientSoundscape = AmbientSoundscape.OFF
+    @Volatile private var activeCustomUri: String? = null
     @Volatile private var targetVolumeGain: Double = 0.25
     @Volatile private var targetDuckGain: Double = 1.0
     @Volatile private var fadeOutRequested: Boolean = false
@@ -187,20 +207,29 @@ class AmbientSoundPlayer(
         private const val SAMPLE_RATE = 44100
         private const val SAMPLE_RATE_D = 44100.0
         private const val CHUNK_FRAMES = 1024
-        private const val CONTROL_BLOCK = 32
         private const val TWO_PI = 2.0 * PI
         private const val DEFAULT_FADE_IN_SEC = 2.5
         private const val DEFAULT_FADE_OUT_SEC = 2.0
         private const val DUCK_GAIN = 0.35
-        private const val MAX_RAIN_DROPS = 6
+        private const val EXO_FADE_TICK_MS = 25L
     }
 
     fun isPlaying(): Boolean = synchronized(controlLock) {
         streamJob?.isActive == true && !fadeOutRequested
     }
 
-    fun isPlayingSoundscape(soundscape: AmbientSoundscape): Boolean = synchronized(controlLock) {
-        streamJob?.isActive == true && !fadeOutRequested && activeSoundscape == soundscape
+    fun isPlayingSoundscape(
+        soundscape: AmbientSoundscape,
+        customUri: String? = null
+    ): Boolean = synchronized(controlLock) {
+        if (streamJob?.isActive != true || fadeOutRequested || activeSoundscape != soundscape) {
+            return@synchronized false
+        }
+        if (soundscape == AmbientSoundscape.CUSTOM) {
+            activeCustomUri == customUri
+        } else {
+            true
+        }
     }
 
     fun setVolumePercent(percent: Int) {
@@ -212,54 +241,72 @@ class AmbientSoundPlayer(
         targetDuckGain = if (ducked) DUCK_GAIN else 1.0
     }
 
-    @Suppress("UNUSED_PARAMETER")
     fun start(
         context: Context,
         soundscape: AmbientSoundscape,
         volumePercent: Int,
         fadeInSeconds: Double = DEFAULT_FADE_IN_SEC,
-        fadeOutSeconds: Double = DEFAULT_FADE_OUT_SEC
+        fadeOutSeconds: Double = DEFAULT_FADE_OUT_SEC,
+        customUri: String? = null,
+        onPlaybackError: (() -> Unit)? = null
     ) {
         if (soundscape == AmbientSoundscape.OFF) {
             stop(fadeOutSeconds)
             return
         }
+        val appContext = context.applicationContext ?: context
+        val resolvedCustomUri = if (soundscape == AmbientSoundscape.CUSTOM) customUri else null
         setVolumePercent(volumePercent)
 
         synchronized(controlLock) {
             switchJob?.cancel()
             switchJob = null
-            if (streamJob?.isActive == true && activeSoundscape == soundscape && !fadeOutRequested) {
+            if (streamJob?.isActive == true &&
+                activeSoundscape == soundscape &&
+                !fadeOutRequested &&
+                (soundscape != AmbientSoundscape.CUSTOM || activeCustomUri == resolvedCustomUri)
+            ) {
                 return
             }
             streamJob?.cancel()
             activeSoundscape = soundscape
+            activeCustomUri = resolvedCustomUri
             fadeOutRequested = false
             activeFadeOutSeconds = fadeOutSeconds.coerceAtLeast(0.05)
-            streamJob = launchStreamJob(
+            streamJob = launchPlaybackJob(
+                appContext = appContext,
                 soundscape = soundscape,
-                fadeInSeconds = fadeInSeconds.coerceAtLeast(0.05)
+                fadeInSeconds = fadeInSeconds.coerceAtLeast(0.05),
+                customUri = resolvedCustomUri,
+                onPlaybackError = onPlaybackError
             )
         }
     }
 
-    @Suppress("UNUSED_PARAMETER")
     fun switchSoundscape(
         context: Context,
         soundscape: AmbientSoundscape,
         volumePercent: Int,
         fadeInSeconds: Double = DEFAULT_FADE_IN_SEC,
-        fadeOutSeconds: Double = DEFAULT_FADE_OUT_SEC
+        fadeOutSeconds: Double = DEFAULT_FADE_OUT_SEC,
+        customUri: String? = null,
+        onPlaybackError: (() -> Unit)? = null
     ) {
         if (soundscape == AmbientSoundscape.OFF) {
             stop(fadeOutSeconds)
             return
         }
+        val appContext = context.applicationContext ?: context
+        val resolvedCustomUri = if (soundscape == AmbientSoundscape.CUSTOM) customUri else null
         setVolumePercent(volumePercent)
 
         val previousJob: Job?
         synchronized(controlLock) {
-            if (streamJob?.isActive == true && activeSoundscape == soundscape && !fadeOutRequested) {
+            if (streamJob?.isActive == true &&
+                activeSoundscape == soundscape &&
+                !fadeOutRequested &&
+                (soundscape != AmbientSoundscape.CUSTOM || activeCustomUri == resolvedCustomUri)
+            ) {
                 return
             }
             switchJob?.cancel()
@@ -277,11 +324,15 @@ class AmbientSoundPlayer(
                 synchronized(controlLock) {
                     if (!isActive) return@launch
                     activeSoundscape = soundscape
+                    activeCustomUri = resolvedCustomUri
                     fadeOutRequested = false
                     activeFadeOutSeconds = fadeOutSeconds.coerceAtLeast(0.05)
-                    streamJob = launchStreamJob(
+                    streamJob = launchPlaybackJob(
+                        appContext = appContext,
                         soundscape = soundscape,
-                        fadeInSeconds = fadeInSeconds.coerceAtLeast(0.05)
+                        fadeInSeconds = fadeInSeconds.coerceAtLeast(0.05),
+                        customUri = resolvedCustomUri,
+                        onPlaybackError = onPlaybackError
                     )
                 }
             }
@@ -292,6 +343,7 @@ class AmbientSoundPlayer(
         switchJob?.cancel()
         switchJob = null
         activeSoundscape = AmbientSoundscape.OFF
+        activeCustomUri = null
         val job = streamJob
         if (job?.isActive == true) {
             activeFadeOutSeconds = fadeOutSeconds.coerceAtLeast(0.05)
@@ -305,58 +357,224 @@ class AmbientSoundPlayer(
     }
 
     fun stopImmediate() {
+        val exoHandle: Pair<ExoPlayer, AtomicBoolean>?
         synchronized(controlLock) {
             switchJob?.cancel()
             switchJob = null
             activeSoundscape = AmbientSoundscape.OFF
+            activeCustomUri = null
             fadeOutRequested = false
             streamJob?.cancel()
             streamJob = null
+            exoHandle = activeExoHandle
+            activeExoHandle = null
+        }
+        if (exoHandle != null) {
+            val (player, released) = exoHandle
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                releaseExoPlayer(player, released)
+            } else {
+                Handler(Looper.getMainLooper()).post {
+                    releaseExoPlayer(player, released)
+                }
+            }
         }
     }
 
-    private fun launchStreamJob(
+    private fun releaseExoPlayer(player: ExoPlayer, released: AtomicBoolean) {
+        if (released.compareAndSet(false, true)) {
+            try {
+                player.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                player.release()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun launchPlaybackJob(
+        appContext: Context,
         soundscape: AmbientSoundscape,
+        fadeInSeconds: Double,
+        customUri: String?,
+        onPlaybackError: (() -> Unit)?
+    ): Job = when {
+        soundscape == AmbientSoundscape.DRONE -> launchDroneStreamJob(fadeInSeconds)
+        soundscape == AmbientSoundscape.CUSTOM -> launchExoPlayerJob(
+            appContext = appContext,
+            mediaUri = null,
+            customUriString = customUri,
+            fadeInSeconds = fadeInSeconds,
+            onPlaybackError = onPlaybackError
+        )
+        soundscape.rawResId != null -> {
+            val rawUri = Uri.Builder()
+                .scheme(ContentResolver.SCHEME_ANDROID_RESOURCE)
+                .authority(appContext.packageName)
+                .path(soundscape.rawResId.toString())
+                .build()
+            launchExoPlayerJob(
+                appContext = appContext,
+                mediaUri = rawUri,
+                customUriString = null,
+                fadeInSeconds = fadeInSeconds,
+                onPlaybackError = onPlaybackError
+            )
+        }
+        else -> scope.launch { }
+    }
+
+    private fun launchExoPlayerJob(
+        appContext: Context,
+        mediaUri: Uri?,
+        customUriString: String?,
+        fadeInSeconds: Double,
+        onPlaybackError: (() -> Unit)?
+    ): Job = scope.launch(Dispatchers.Main) {
+        val resolvedUri: Uri = if (mediaUri != null) {
+            mediaUri
+        } else {
+            val readable = withContext(Dispatchers.IO) {
+                isAudioUriReadable(appContext, customUriString)
+            }
+            if (!readable || customUriString.isNullOrBlank()) {
+                synchronized(controlLock) {
+                    if (activeSoundscape == AmbientSoundscape.CUSTOM) {
+                        activeSoundscape = AmbientSoundscape.OFF
+                        activeCustomUri = null
+                    }
+                }
+                onPlaybackError?.invoke()
+                return@launch
+            }
+            try {
+                customUriString.toUri()
+            } catch (_: Exception) {
+                onPlaybackError?.invoke()
+                return@launch
+            }
+        }
+
+        if (!isActive) return@launch
+
+        var player: ExoPlayer? = null
+        val released = AtomicBoolean(false)
+        val errorNotified = AtomicBoolean(false)
+        val playbackFailed = AtomicBoolean(false)
+
+        try {
+            val audioAttrs = Media3AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .build()
+
+            val exoPlayer = ExoPlayer.Builder(appContext)
+                .setAudioAttributes(audioAttrs, false)
+                .build()
+            player = exoPlayer
+
+            synchronized(controlLock) {
+                if (!isActive) {
+                    releaseExoPlayer(exoPlayer, released)
+                    return@launch
+                }
+                activeExoHandle = exoPlayer to released
+            }
+
+            exoPlayer.repeatMode = Player.REPEAT_MODE_ONE
+            exoPlayer.volume = 0f
+            exoPlayer.addListener(object : Player.Listener {
+                override fun onPlayerError(error: PlaybackException) {
+                    playbackFailed.set(true)
+                    if (errorNotified.compareAndSet(false, true)) {
+                        onPlaybackError?.invoke()
+                    }
+                }
+            })
+            exoPlayer.setMediaItem(MediaItem.fromUri(resolvedUri))
+            exoPlayer.prepare()
+            exoPlayer.play()
+
+            val fadeInDurationMs = (fadeInSeconds * 1000.0).coerceAtLeast(50.0)
+            val fadeInStartMs = SystemClock.elapsedRealtime()
+            var currentEnvelope = 0.0
+            var fadeOutActive = false
+            var fadeOutStartLevel = 1.0
+            var fadeOutStartMs = 0L
+            var fadeOutDurationMs = (DEFAULT_FADE_OUT_SEC * 1000.0)
+
+            var currentVolGain = targetVolumeGain
+            var currentDuckGain = targetDuckGain
+            var finishedFadeOut = false
+
+            while (isActive && !finishedFadeOut && !playbackFailed.get()) {
+                val nowMs = SystemClock.elapsedRealtime()
+                if (fadeOutRequested && !fadeOutActive) {
+                    fadeOutActive = true
+                    fadeOutStartLevel = currentEnvelope
+                    fadeOutStartMs = nowMs
+                    fadeOutDurationMs = (activeFadeOutSeconds * 1000.0).coerceAtLeast(50.0)
+                }
+
+                if (fadeOutActive) {
+                    val progress = ((nowMs - fadeOutStartMs) / fadeOutDurationMs).coerceIn(0.0, 1.0)
+                    currentEnvelope = fadeOutStartLevel * 0.5 * (1.0 + cos(PI * progress))
+                    if (progress >= 1.0) {
+                        currentEnvelope = 0.0
+                        finishedFadeOut = true
+                    }
+                } else {
+                    val progress = ((nowMs - fadeInStartMs) / fadeInDurationMs).coerceIn(0.0, 1.0)
+                    currentEnvelope = 0.5 * (1.0 - cos(PI * progress))
+                }
+
+                currentVolGain += (targetVolumeGain - currentVolGain) * 0.35
+                currentDuckGain += (targetDuckGain - currentDuckGain) * 0.15
+
+                val finalVolume = (currentEnvelope * currentVolGain * currentDuckGain)
+                    .toFloat()
+                    .coerceIn(0f, 1f)
+                if (!released.get()) {
+                    exoPlayer.volume = finalVolume
+                }
+
+                if (!finishedFadeOut) {
+                    delay(EXO_FADE_TICK_MS)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            if (errorNotified.compareAndSet(false, true)) {
+                onPlaybackError?.invoke()
+            }
+        } finally {
+            val capturedPlayer = player
+            if (capturedPlayer != null) {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    synchronized(controlLock) {
+                        if (activeExoHandle?.first === capturedPlayer) {
+                            activeExoHandle = null
+                        }
+                    }
+                    releaseExoPlayer(capturedPlayer, released)
+                }
+            }
+        }
+    }
+
+    private fun launchDroneStreamJob(
         fadeInSeconds: Double
     ): Job = scope.launch(Dispatchers.Default) {
         var audioTrack: AudioTrack? = null
-        // Pre-allocazione completa di buffer e stati DSP prima del ciclo di streaming (zero allocazioni nel loop)
+        // Pre-allocazione completa prima del ciclo di streaming (zero allocazioni nel loop)
         val pcmBuffer = ShortArray(CHUNK_FRAMES * 2)
-        val pinkL = VossPinkNoise7(0x51A7F3C9B2E1D4A7L)
-        val pinkR = VossPinkNoise7(0x2D9E6B4F8A1C7351L)
-        val dropRng = FastXorShiftRng(0x7B3E19D5C4F2A813L)
-
         val lpL = BiquadFilter()
         val lpR = BiquadFilter()
-        val bpL1 = BiquadFilter()
-        val bpL2 = BiquadFilter()
-        val bpR1 = BiquadFilter()
-        val bpR2 = BiquadFilter()
-        val windBedL = BiquadFilter()
-        val windBedR = BiquadFilter()
-
-        // Pool pre-allocato per micro-gocce di pioggia
-        val dropAmp = DoubleArray(MAX_RAIN_DROPS)
-        val dropDecay = DoubleArray(MAX_RAIN_DROPS)
-        val dropPhase = DoubleArray(MAX_RAIN_DROPS)
-        val dropPhaseInc = DoubleArray(MAX_RAIN_DROPS)
-        val dropPanL = DoubleArray(MAX_RAIN_DROPS)
-        val dropPanR = DoubleArray(MAX_RAIN_DROPS)
-
-        // Stati specifici dei timbri
-        var brownL = 0.0
-        var brownR = 0.0
-        var rainDriftPhase = 0.0
-
-        var oceanPhase1L = 0.0
-        var oceanPhase1R = 0.65
-        var oceanPhase2L = 1.4
-        var oceanPhase2R = 2.55
-
-        var windLfo1 = 0.0
-        var windLfo2 = 1.7
-        var windGustL = 0.4
-        var windGustR = 2.1
+        lpL.setLowPass(420.0, 0.707, SAMPLE_RATE_D)
+        lpR.setLowPass(420.0, 0.707, SAMPLE_RATE_D)
 
         // Accumulatori di fase continui per Bordone 136.1 Hz (Om) con detune binaurale ±0.28 Hz
         var dFundL = 0.0; var dFundR = 0.0
@@ -375,38 +593,6 @@ class AmbientSoundPlayer(
         val dOctIncR = TWO_PI * (272.20 + 0.28) / SAMPLE_RATE_D
         val droneBreathInc = TWO_PI * 0.08 / SAMPLE_RATE_D
 
-        val oceanInc1 = TWO_PI / (9.5 * SAMPLE_RATE_D)
-        val oceanInc2 = TWO_PI / (13.2 * SAMPLE_RATE_D)
-        val windInc1 = TWO_PI * 0.047 / SAMPLE_RATE_D
-        val windInc2 = TWO_PI * 0.073 / SAMPLE_RATE_D
-        val windGustIncL = TWO_PI * 0.031 / SAMPLE_RATE_D
-        val windGustIncR = TWO_PI * 0.041 / SAMPLE_RATE_D
-        val rainDriftInc = TWO_PI * 0.025 / SAMPLE_RATE_D
-
-        when (soundscape) {
-            AmbientSoundscape.RAIN -> {
-                lpL.setLowPass(480.0, 0.707, SAMPLE_RATE_D)
-                lpR.setLowPass(480.0, 0.707, SAMPLE_RATE_D)
-            }
-            AmbientSoundscape.OCEAN -> {
-                lpL.setLowPass(240.0, 0.707, SAMPLE_RATE_D)
-                lpR.setLowPass(240.0, 0.707, SAMPLE_RATE_D)
-            }
-            AmbientSoundscape.WIND -> {
-                bpL1.setBandPass(320.0, 2.6, SAMPLE_RATE_D)
-                bpL2.setBandPass(420.0, 3.2, SAMPLE_RATE_D)
-                bpR1.setBandPass(420.0, 2.6, SAMPLE_RATE_D)
-                bpR2.setBandPass(320.0, 3.2, SAMPLE_RATE_D)
-                windBedL.setLowPass(240.0, 0.707, SAMPLE_RATE_D)
-                windBedR.setLowPass(240.0, 0.707, SAMPLE_RATE_D)
-            }
-            AmbientSoundscape.DRONE -> {
-                lpL.setLowPass(420.0, 0.707, SAMPLE_RATE_D)
-                lpR.setLowPass(420.0, 0.707, SAMPLE_RATE_D)
-            }
-            AmbientSoundscape.OFF -> return@launch
-        }
-
         val fadeInSamples = (fadeInSeconds * SAMPLE_RATE_D).toLong().coerceAtLeast(1L)
         var fadeInCounter = 0L
         var currentEnvelope = 0.0
@@ -417,11 +603,6 @@ class AmbientSoundPlayer(
 
         var currentVolGain = targetVolumeGain
         var currentDuckGain = targetDuckGain
-        var controlCounter = 0
-        var oceanEnvL = 0.35
-        var oceanEnvR = 0.35
-        var windAmpL = 0.75
-        var windAmpR = 0.75
 
         try {
             val minBufBytes = AudioTrack.getMinBufferSize(
@@ -488,174 +669,39 @@ class AmbientSoundPlayer(
                     currentVolGain += (targetVol - currentVolGain) * 0.0008
                     currentDuckGain += (targetDuck - currentDuckGain) * 0.00025
 
-                    var sampleL: Double
-                    var sampleR: Double
+                    val sampleL: Double
+                    val sampleR: Double
 
                     if (finishedFadeOut) {
                         sampleL = 0.0
                         sampleR = 0.0
                     } else {
-                        when (soundscape) {
-                            AmbientSoundscape.RAIN -> {
-                                rainDriftPhase += rainDriftInc
-                                if (rainDriftPhase >= TWO_PI) rainDriftPhase -= TWO_PI
-                                val drift = 0.95 + 0.05 * sin(rainDriftPhase)
+                        dFundL += dFundIncL; if (dFundL >= TWO_PI) dFundL -= TWO_PI
+                        dFundR += dFundIncR; if (dFundR >= TWO_PI) dFundR -= TWO_PI
+                        dFifthL += dFifthIncL; if (dFifthL >= TWO_PI) dFifthL -= TWO_PI
+                        dFifthR += dFifthIncR; if (dFifthR >= TWO_PI) dFifthR -= TWO_PI
+                        dSubL += dSubIncL; if (dSubL >= TWO_PI) dSubL -= TWO_PI
+                        dSubR += dSubIncR; if (dSubR >= TWO_PI) dSubR -= TWO_PI
+                        dOctL += dOctIncL; if (dOctL >= TWO_PI) dOctL -= TWO_PI
+                        dOctR += dOctIncR; if (dOctR >= TWO_PI) dOctR -= TWO_PI
+                        droneBreathPhase += droneBreathInc
+                        if (droneBreathPhase >= TWO_PI) droneBreathPhase -= TWO_PI
 
-                                val bedL = lpL.process(pinkL.next()) * 1.38 * drift
-                                val bedR = lpR.process(pinkR.next()) * 1.38 * drift
+                        val breath = 0.86 + 0.14 * sin(droneBreathPhase)
+                        val harmBreath = 0.72 + 0.28 * cos(droneBreathPhase)
 
-                                // Micro-gocce transienti sparse ad inviluppo esponenziale rapido
-                                if (dropRng.nextDoubleUnit() < (11.0 / SAMPLE_RATE_D)) {
-                                    for (d in 0 until MAX_RAIN_DROPS) {
-                                        if (dropAmp[d] < 0.0004) {
-                                            val freq = 950.0 + dropRng.nextDoubleUnit() * 1650.0
-                                            val decaySec = 0.012 + dropRng.nextDoubleUnit() * 0.020
-                                            val pan = 0.12 + dropRng.nextDoubleUnit() * 0.76
-                                            dropAmp[d] = 0.045 + dropRng.nextDoubleUnit() * 0.065
-                                            dropDecay[d] = exp(-1.0 / (decaySec * SAMPLE_RATE_D))
-                                            dropPhase[d] = 0.0
-                                            dropPhaseInc[d] = TWO_PI * freq / SAMPLE_RATE_D
-                                            dropPanL[d] = 1.0 - pan
-                                            dropPanR[d] = pan
-                                            break
-                                        }
-                                    }
-                                }
+                        val rawL = (0.48 * sin(dFundL) +
+                            0.23 * harmBreath * sin(dFifthL) +
+                            0.21 * sin(dSubL) +
+                            0.08 * harmBreath * sin(dOctL)) * breath * 0.72
+                        val rawR = (0.48 * sin(dFundR) +
+                            0.23 * harmBreath * sin(dFifthR) +
+                            0.21 * sin(dSubR) +
+                            0.08 * harmBreath * sin(dOctR)) * breath * 0.72
 
-                                var dropsL = 0.0
-                                var dropsR = 0.0
-                                for (d in 0 until MAX_RAIN_DROPS) {
-                                    val amp = dropAmp[d]
-                                    if (amp >= 0.0004) {
-                                        val ph = dropPhase[d] + dropPhaseInc[d]
-                                        dropPhase[d] = if (ph >= TWO_PI) ph - TWO_PI else ph
-                                        val s = sin(ph) * amp
-                                        dropsL += s * dropPanL[d]
-                                        dropsR += s * dropPanR[d]
-                                        dropAmp[d] = amp * dropDecay[d]
-                                    }
-                                }
-
-                                val rawL = bedL + dropsL
-                                val rawR = bedR + dropsR
-                                // Leggero cross-feed stereo naturale
-                                sampleL = rawL * 0.84 + rawR * 0.16
-                                sampleR = rawR * 0.84 + rawL * 0.16
-                            }
-
-                            AmbientSoundscape.OCEAN -> {
-                                oceanPhase1L += oceanInc1
-                                if (oceanPhase1L >= TWO_PI) oceanPhase1L -= TWO_PI
-                                oceanPhase1R += oceanInc1
-                                if (oceanPhase1R >= TWO_PI) oceanPhase1R -= TWO_PI
-                                oceanPhase2L += oceanInc2
-                                if (oceanPhase2L >= TWO_PI) oceanPhase2L -= TWO_PI
-                                oceanPhase2R += oceanInc2
-                                if (oceanPhase2R >= TWO_PI) oceanPhase2R -= TWO_PI
-
-                                if (controlCounter == 0) {
-                                    // Onda asimmetrica: salita piu decisa verso il frangente, discesa morbida nella risacca
-                                    val w1L = 0.5 * (1.0 + sin(oceanPhase1L - 0.38 * sin(oceanPhase1L)))
-                                    val w2L = 0.5 * (1.0 + sin(oceanPhase2L - 0.34 * sin(oceanPhase2L)))
-                                    val waveL = (0.64 * w1L + 0.36 * w2L).coerceIn(0.0, 1.0)
-                                    val shapedL = waveL * waveL
-
-                                    val w1R = 0.5 * (1.0 + sin(oceanPhase1R - 0.38 * sin(oceanPhase1R)))
-                                    val w2R = 0.5 * (1.0 + sin(oceanPhase2R - 0.34 * sin(oceanPhase2R)))
-                                    val waveR = (0.64 * w1R + 0.36 * w2R).coerceIn(0.0, 1.0)
-                                    val shapedR = waveR * waveR
-
-                                    lpL.setLowPass(180.0 + 720.0 * shapedL, 0.72, SAMPLE_RATE_D)
-                                    lpR.setLowPass(180.0 + 720.0 * shapedR, 0.72, SAMPLE_RATE_D)
-                                    oceanEnvL = 0.30 + 0.70 * shapedL
-                                    oceanEnvR = 0.30 + 0.70 * shapedR
-                                }
-
-                                val pL = pinkL.next()
-                                val pR = pinkR.next()
-                                brownL += 0.018 * (pL - brownL)
-                                brownR += 0.018 * (pR - brownR)
-                                val srcL = pL * 0.76 + brownL * 0.60
-                                val srcR = pR * 0.76 + brownR * 0.60
-
-                                val filtL = lpL.process(srcL) * oceanEnvL * 1.48
-                                val filtR = lpR.process(srcR) * oceanEnvR * 1.48
-                                sampleL = filtL * 0.85 + filtR * 0.15
-                                sampleR = filtR * 0.85 + filtL * 0.15
-                            }
-
-                            AmbientSoundscape.WIND -> {
-                                windLfo1 += windInc1
-                                if (windLfo1 >= TWO_PI) windLfo1 -= TWO_PI
-                                windLfo2 += windInc2
-                                if (windLfo2 >= TWO_PI) windLfo2 -= TWO_PI
-                                windGustL += windGustIncL
-                                if (windGustL >= TWO_PI) windGustL -= TWO_PI
-                                windGustR += windGustIncR
-                                if (windGustR >= TWO_PI) windGustR -= TWO_PI
-
-                                if (controlCounter == 0) {
-                                    val s1 = sin(windLfo1)
-                                    val s2 = sin(windLfo2)
-                                    // Oscillazione lenta incommensurabile tra 220 Hz e 540 Hz in opposizione stereo L/R
-                                    val freqL1 = 380.0 + 155.0 * s1
-                                    val freqR1 = 380.0 - 155.0 * s1
-                                    val freqL2 = 380.0 + 155.0 * s2
-                                    val freqR2 = 380.0 - 155.0 * s2
-                                    bpL1.setBandPass(freqL1, 2.6, SAMPLE_RATE_D)
-                                    bpR1.setBandPass(freqR1, 2.6, SAMPLE_RATE_D)
-                                    bpL2.setBandPass(freqL2, 3.2, SAMPLE_RATE_D)
-                                    bpR2.setBandPass(freqR2, 3.2, SAMPLE_RATE_D)
-
-                                    windAmpL = 0.56 + 0.44 * (0.5 * (1.0 + sin(windGustL)))
-                                    windAmpR = 0.56 + 0.44 * (0.5 * (1.0 + sin(windGustR)))
-                                }
-
-                                val pL = pinkL.next()
-                                val pR = pinkR.next()
-                                val wL = ((bpL1.process(pL) + bpL2.process(pL)) * 1.55 + windBedL.process(pL) * 0.30) * windAmpL
-                                val wR = ((bpR1.process(pR) + bpR2.process(pR)) * 1.55 + windBedR.process(pR) * 0.30) * windAmpR
-                                sampleL = wL * 0.86 + wR * 0.14
-                                sampleR = wR * 0.86 + wL * 0.14
-                            }
-
-                            AmbientSoundscape.DRONE -> {
-                                dFundL += dFundIncL; if (dFundL >= TWO_PI) dFundL -= TWO_PI
-                                dFundR += dFundIncR; if (dFundR >= TWO_PI) dFundR -= TWO_PI
-                                dFifthL += dFifthIncL; if (dFifthL >= TWO_PI) dFifthL -= TWO_PI
-                                dFifthR += dFifthIncR; if (dFifthR >= TWO_PI) dFifthR -= TWO_PI
-                                dSubL += dSubIncL; if (dSubL >= TWO_PI) dSubL -= TWO_PI
-                                dSubR += dSubIncR; if (dSubR >= TWO_PI) dSubR -= TWO_PI
-                                dOctL += dOctIncL; if (dOctL >= TWO_PI) dOctL -= TWO_PI
-                                dOctR += dOctIncR; if (dOctR >= TWO_PI) dOctR -= TWO_PI
-                                droneBreathPhase += droneBreathInc
-                                if (droneBreathPhase >= TWO_PI) droneBreathPhase -= TWO_PI
-
-                                val breath = 0.86 + 0.14 * sin(droneBreathPhase)
-                                val harmBreath = 0.72 + 0.28 * cos(droneBreathPhase)
-
-                                val rawL = (0.48 * sin(dFundL) +
-                                    0.23 * harmBreath * sin(dFifthL) +
-                                    0.21 * sin(dSubL) +
-                                    0.08 * harmBreath * sin(dOctL)) * breath * 0.72
-                                val rawR = (0.48 * sin(dFundR) +
-                                    0.23 * harmBreath * sin(dFifthR) +
-                                    0.21 * sin(dSubR) +
-                                    0.08 * harmBreath * sin(dOctR)) * breath * 0.72
-
-                                sampleL = lpL.process(rawL)
-                                sampleR = lpR.process(rawR)
-                            }
-
-                            AmbientSoundscape.OFF -> {
-                                sampleL = 0.0
-                                sampleR = 0.0
-                            }
-                        }
+                        sampleL = lpL.process(rawL)
+                        sampleR = lpR.process(rawR)
                     }
-
-                    controlCounter++
-                    if (controlCounter >= CONTROL_BLOCK) controlCounter = 0
 
                     val totalGain = currentEnvelope * currentVolGain * currentDuckGain
                     val outL = tanh(sampleL * totalGain) * 32767.0
