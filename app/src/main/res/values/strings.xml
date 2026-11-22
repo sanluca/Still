@@ -166,4 +166,25 @@
     <string name="preset_summary_dnd_off">DND Off</string>
     <string name="preset_summary_bell_vol">Bell %1$d%%</string>
     <string name="preset_summary_ambient_vol">Ambient %1$d%%</string>
+    <string name="settings_reminder_title">Meditation Reminder</string>
+    <string name="settings_reminder_configure">Configure</string>
+    <string name="dialog_reminder_title">Meditation Reminder</string>
+    <string name="reminder_enable_title">Gentle Reminder</string>
+    <string name="reminder_enable_active">Active</string>
+    <string name="reminder_enable_inactive">Disabled</string>
+    <string name="reminder_status_off">Disabled</string>
+    <string name="reminder_time_label">Time:</string>
+    <string name="reminder_frequency_label">Frequency:</string>
+    <string name="reminder_freq_daily">Every day</string>
+    <string name="reminder_freq_weekdays">Selected days</string>
+    <string name="reminder_freq_every_2_days">Every 2 days</string>
+    <string name="reminder_freq_every_3_days">Every 3 days</string>
+    <string name="reminder_soft_note">Silent visual notification by default (no sound or vibration). Automatically skipped if you have already meditated today.</string>
+    <string name="reminder_system_disabled_warning">Notifications for this channel are currently blocked in Android settings.</string>
+    <string name="reminder_system_settings_button">Android Notification Settings</string>
+    <string name="reminder_permission_denied_toast">Allow notifications to enable meditation reminders</string>
+    <string name="reminder_channel_name">Meditation Reminders</string>
+    <string name="reminder_channel_description">Gentle, silent reminders to take a moment for meditation</string>
+    <string name="reminder_notification_title">Time to pause</string>
+    <string name="reminder_notification_body">Take a few quiet minutes to meditate with Still.</string>
 </resources>

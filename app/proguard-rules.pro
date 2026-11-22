@@ -17,11 +17,13 @@
     public void onDataChanged(com.google.android.gms.wearable.DataEventBuffer);
 }
 
-# 4. Servizi Android registrati nel Manifest
+# 4. Servizi e receiver Android registrati nel Manifest
 -keep class com.sanluca.still.StillTimerService { *; }
 -keep class com.sanluca.still.WearListenerService { *; }
+-keep class com.sanluca.still.MeditationReminderReceiver { *; }
 
 # 5. Modelli dati interni
 -keep class com.sanluca.still.SessionLogEntry { *; }
 -keep class com.sanluca.still.PendingSessionEntry { *; }
 -keep class com.sanluca.still.MeditationPreset { *; }
+-keep class com.sanluca.still.MeditationReminderSettings { *; }

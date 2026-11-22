@@ -259,6 +259,8 @@ fun MeditationTimerScreen(
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showPresetPickerDialog by remember { mutableStateOf(false) }
     var showPresetManagerDialog by remember { mutableStateOf(false) }
+    var showReminderDialog by remember { mutableStateOf(false) }
+    var reminderSettings by remember { mutableStateOf(getSavedReminderSettings(context)) }
     var presets by remember { mutableStateOf(getSavedPresets(context)) }
     var activePresetId by remember { mutableStateOf(getActivePresetId(context)) }
     val activePreset = remember(presets, activePresetId) {
@@ -266,6 +268,16 @@ fun MeditationTimerScreen(
     }
     LaunchedEffect(activePreset) {
         onPresetPaletteOverrideChange(activePreset?.effectiveColorPalette())
+    }
+    LaunchedEffect(Unit) {
+        if (reminderSettings.enabled) {
+            scheduleMeditationReminder(
+                context,
+                reminderSettings,
+                afterTrigger = false,
+                preserveExistingFuture = true
+            )
+        }
     }
 
     var isResyncing by remember { mutableStateOf(false) }
@@ -1038,7 +1050,27 @@ fun MeditationTimerScreen(
                     pickCustomAudioLauncher.launch(arrayOf("audio/mpeg", "audio/ogg", "application/ogg"))
                 },
                 presetCount = presets.size,
-                onOpenPresetManager = { showPresetManagerDialog = true }
+                onOpenPresetManager = { showPresetManagerDialog = true },
+                reminderSummary = formatReminderSummary(context, reminderSettings),
+                onOpenReminderSettings = { showReminderDialog = true }
+            )
+        }
+
+        // --- DIALOG PROMEMORIA MEDITAZIONE ---
+        if (showReminderDialog) {
+            StillReminderDialog(
+                settings = reminderSettings,
+                onSettingsChange = { updated ->
+                    reminderSettings = updated
+                    saveReminderSettings(context, updated)
+                    scheduleMeditationReminder(
+                        context,
+                        updated,
+                        afterTrigger = false,
+                        preserveExistingFuture = false
+                    )
+                },
+                onDismiss = { showReminderDialog = false }
             )
         }
 

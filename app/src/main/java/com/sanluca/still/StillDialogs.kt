@@ -128,7 +128,9 @@ fun StillSettingsDialog(
     customAmbientName: String? = null,
     onPickCustomAudio: () -> Unit = {},
     presetCount: Int = 0,
-    onOpenPresetManager: () -> Unit = {}
+    onOpenPresetManager: () -> Unit = {},
+    reminderSummary: String = "",
+    onOpenReminderSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -869,6 +871,50 @@ fun StillSettingsDialog(
                             ) {
                                 Text(stringResource(R.string.settings_dnd_authorize), fontSize = 11.sp)
                             }
+                        }
+                    }
+                }
+
+                // 3b. PROMEMORIA MEDITAZIONE
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(
+                                text = stringResource(R.string.settings_reminder_title),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = reminderSummary.ifBlank { stringResource(R.string.reminder_status_off) },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                previewGongJob?.cancel()
+                                previewAmbientJob?.cancel()
+                                previewAmbientPlayer.stopImmediate()
+                                onOpenReminderSettings()
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.settings_reminder_configure),
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }

@@ -1,6 +1,6 @@
 # Privacy Policy - Still (Informativa sulla Privacy — v3.0.0)
 
-*Ultimo aggiornamento / Last updated: 21 Novembre 2026*
+*Ultimo aggiornamento / Last updated: 22 Novembre 2026*
 
 ---
 
@@ -31,12 +31,13 @@ L'app per smartwatch Wear OS dichiara i permessi opzionali `android.permission.h
 - **Utilizzo facoltativo**: se l'utente rifiuta o revoca il permesso, il timer e tutte le funzioni di meditazione su Wear OS continuano a funzionare regolarmente senza alcuna limitazione.
 
 ### 3. Dati Memorizzati sul Dispositivo, File Locali e Backup
-- **Preferenze, Impostazioni e Preset**: le preferenze dell'app su smartphone e smartwatch (es. durata del timer, stile visivo, timbro e volume delle campane, sottofondo sonoro e relativo volume, intervallo campane, attivazione automatica Non Disturbare su smartphone, tema colori) e gli eventuali **preset di meditazione** salvati su smartphone (nome e parametri configurati) vengono salvati esclusivamente in locale nella memoria privata del dispositivo tramite `SharedPreferences`.
+- **Preferenze, Impostazioni, Preset e Promemoria**: le preferenze dell'app su smartphone e smartwatch (es. durata del timer, stile visivo, timbro e volume delle campane, sottofondo sonoro e relativo volume, intervallo campane, attivazione automatica Non Disturbare su smartphone, tema colori), gli eventuali **preset di meditazione** salvati su smartphone (nome e parametri configurati) e la configurazione opzionale dei **promemoria di meditazione** (stato attivo/disattivo, orario, frequenza e giorni scelti) vengono salvati esclusivamente in locale nella memoria privata del dispositivo tramite `SharedPreferences`.
+- **Promemoria di Meditazione Locali (Opzionale — Smartphone)**: disabilitati di default. Se abilitati dall'utente, Still pianifica notifiche esclusivamente locali sul dispositivo tramite `AlarmManager` e il permesso di sistema `RECEIVE_BOOT_COMPLETED` (usato solo per riprogrammare il promemoria locale dopo un riavvio del dispositivo o cambio di orario/fuso orario) e `POST_NOTIFICATIONS` per mostrare la notifica silenziosa. Prima di inviare il promemoria, Still verifica localmente sullo storico del dispositivo se l'utente ha già meditato oggi. Non vengono usati server push, Firebase Cloud Messaging o servizi di rete esterni.
 - **File Audio Personali (Opzionale — Smartphone)**: se l'utente sceglie una propria traccia di sottofondo (`.mp3` o `.ogg`) nelle impostazioni globali o in un preset tramite il selettore file di sistema di Android (*Storage Access Framework* / `OpenDocument`), Still salva localmente solo l'URI persistente e il nome del file per riprodurlo in locale sul dispositivo. Still non accede ad altri file del telefono e non carica né condivide mai i file audio selezionati.
 - **Storico Locale**: l'elenco delle sessioni completate (inclusi gli eventuali dati BPM rilevati dall'orologio) viene conservato esclusivamente in locale sul dispositivo. L'utente può eliminare in qualsiasi momento le singole sessioni dallo storico interno dell'app.
 - **Esportazione e Importazione Manuale (Backup CSV)**: dallo storico dello smartphone l'utente può esportare o reimportare manualmente l'intero storico delle sessioni in un file **CSV UTF-8** utilizzando il selettore file di sistema di Android (*Storage Access Framework*). Il file esportato contiene le sessioni registrate (inclusi gli eventuali valori BPM associati) e viene salvato esclusivamente nella posizione scelta dall'utente; in fase di importazione i duplicati vengono filtrati automaticamente.
 - **Backup di Sistema Android**:
-  - Su **smartphone (`:app`)**, se l'utente ha abilitato il backup del dispositivo nelle impostazioni di Android, solo `still_prefs.xml` (impostazioni, preset e storico locale) viene incluso nel servizio di backup cifrato di Google (Google Drive o trasferimento verso un nuovo dispositivo), mentre lo stato temporaneo Non Disturbare (`still_dnd_state.xml`) rimane escluso.
+  - Su **smartphone (`:app`)**, se l'utente ha abilitato il backup del dispositivo nelle impostazioni di Android, solo `still_prefs.xml` (impostazioni, preset, promemoria e storico locale) viene incluso nel servizio di backup cifrato di Google (Google Drive o trasferimento verso un nuovo dispositivo), mentre lo stato temporaneo Non Disturbare (`still_dnd_state.xml`) rimane escluso.
   - Su **smartwatch (`:wear`)**, il backup di sistema è disabilitato (`allowBackup="false"`).
 
 ### 4. Comunicazione tra Smartphone e Smartwatch (Wear OS)
@@ -44,6 +45,7 @@ La comunicazione tra l'app per smartwatch (Wear OS) e l'app per smartphone avvie
 
 ### 5. Controllo dell'Utente e Cancellazione dei Dati
 - L'utente ha il pieno controllo sui permessi di Health Connect, che possono essere revocati in qualsiasi momento tramite le *Impostazioni di Sistema Android > Sicurezza e Privacy > Connessione Salute*.
+- I promemoria di meditazione su smartphone possono essere disattivati in qualsiasi momento dalle impostazioni di Still oppure silenziati/gestiti tramite le *Impostazioni di Sistema Android > App > Still > Notifiche*.
 - Il permesso per il battito cardiaco su Wear OS (`READ_HEART_RATE` su Android 16+ / `BODY_SENSORS` su versioni precedenti) può essere concesso o revocato in qualsiasi momento dalle *Impostazioni dell'orologio > App > Autorizzazioni*.
 - Le sessioni registrate su Health Connect possono essere visualizzate o eliminate direttamente dall'app di sistema Health Connect / Google Salute.
 - La disinstallazione dell'applicazione Still comporta la cancellazione automatica di tutti i dati memorizzati localmente sul dispositivo (a meno che non vengano successivamente ripristinati tramite il backup di sistema Google Android o tramite un file CSV esportato manualmente dall'utente).
@@ -81,12 +83,13 @@ The Wear OS smartwatch app declares the optional `android.permission.health.READ
 - **Fully Optional**: If the user denies or revokes this permission, the timer and all meditation features on Wear OS continue working normally without restriction.
 
 ### 3. Local Data Storage, User Files & Backups
-- **Settings, Preferences & Presets**: User configurations on phone and watch (such as timer duration, visual style, bell sound and volume, ambient soundscape and volume, interval chime settings, Auto Do Not Disturb on smartphone, and color theme) as well as any **meditation presets** saved on smartphone (preset name and configured parameters) are stored strictly locally in Android's private `SharedPreferences`.
+- **Settings, Preferences, Presets & Reminders**: User configurations on phone and watch (such as timer duration, visual style, bell sound and volume, ambient soundscape and volume, interval chime settings, Auto Do Not Disturb on smartphone, and color theme), any **meditation presets** saved on smartphone (preset name and configured parameters), and optional **meditation reminder** preferences (enabled state, time, frequency, and selected days) are stored strictly locally in Android's private `SharedPreferences`.
+- **Local Meditation Reminders (Optional — Smartphone)**: Disabled by default. When enabled by the user, Still schedules strictly on-device local notifications via Android `AlarmManager`, using `RECEIVE_BOOT_COMPLETED` solely to restore the local schedule after a reboot or time/timezone change and `POST_NOTIFICATIONS` to display the silent reminder. Before posting a reminder, Still checks only the on-device session history to skip the alert if the user has already meditated today. No push servers, Firebase Cloud Messaging, or external network services are used.
 - **Custom Local Audio Files (Optional — Smartphone)**: If the user selects a personal background track (`.mp3` or `.ogg`) in global settings or in a preset via Android's system file picker (*Storage Access Framework* / `OpenDocument`), Still stores only the persistable file URI and display name locally to play the file on-device. Still cannot access any other files on the device and never uploads or shares selected audio files.
 - **Session History**: Meditation logs (including any optional BPM values recorded from the watch) are saved solely on the local device. Users can manually delete any session record from the history screen at any time.
 - **Manual CSV Backup (Export / Import)**: From the smartphone history screen, users can manually export or import their complete session history in **UTF-8 CSV** format via Android's system file picker (*Storage Access Framework*). Exported CSV files include any BPM data saved in local history and are written only to the location chosen by the user; duplicate sessions are automatically skipped on import.
 - **Android System Backup**:
-  - On **smartphones (`:app`)**, if the user has enabled device backup in Android settings, only `still_prefs.xml` (preferences, presets, and local session history) is included in Google's encrypted system backup service (Google Drive or device-to-device transfer), while temporary Do Not Disturb state (`still_dnd_state.xml`) is excluded.
+  - On **smartphones (`:app`)**, if the user has enabled device backup in Android settings, only `still_prefs.xml` (preferences, presets, reminders, and local session history) is included in Google's encrypted system backup service (Google Drive or device-to-device transfer), while temporary Do Not Disturb state (`still_dnd_state.xml`) is excluded.
   - On **smartwatches (`:wear`)**, system backup is disabled (`allowBackup="false"`).
 
 ### 4. Watch and Phone Communication (Wear OS)
@@ -94,6 +97,7 @@ Communication between the Wear OS watch and paired Android phone takes place loc
 
 ### 5. User Rights and Data Deletion
 - Users can revoke Health Connect permissions at any time via Android *Settings > Security & Privacy > Health Connect*.
+- Smartphone meditation reminders can be disabled at any time in Still settings or muted/managed via Android *Settings > Apps > Still > Notifications*.
 - The Wear OS heart rate permission (`READ_HEART_RATE` on Android 16+ / `BODY_SENSORS` on earlier versions) can be granted or revoked at any time via watch *Settings > Apps > Permissions*.
 - Sessions saved to Health Connect can be viewed or deleted at any time through the Android Health Connect system interface.
 - Uninstalling the application deletes all locally stored preferences and history from the device (unless subsequently restored via Android's Google system backup or a user-exported CSV backup file).
