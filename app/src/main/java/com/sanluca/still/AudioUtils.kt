@@ -1047,12 +1047,36 @@ fun triggerHapticGong(context: Context, repeatCount: Int = 1) {
     try {
         val vibrator = getSystemVibrator(context)
         if (vibrator != null && vibrator.hasVibrator()) {
-            val timings = if (repeatCount >= 3) {
-                longArrayOf(0, 500, 200, 800, 600, 500, 200, 800, 600, 500, 200, 800)
+            val count = if (repeatCount >= 3) 3 else 1
+            val effect = if (vibrator.hasAmplitudeControl()) {
+                val pulseTimings = longArrayOf(60, 80, 120, 90, 70)
+                val pulseAmplitudes = intArrayOf(45, 105, 145, 90, 35)
+                val gapMs = 750L
+                val totalLen = count * pulseTimings.size + (count - 1)
+                val timings = LongArray(totalLen)
+                val amplitudes = IntArray(totalLen)
+                var idx = 0
+                for (i in 0 until count) {
+                    if (i > 0) {
+                        timings[idx] = gapMs
+                        amplitudes[idx] = 0
+                        idx++
+                    }
+                    for (j in pulseTimings.indices) {
+                        timings[idx] = pulseTimings[j]
+                        amplitudes[idx] = pulseAmplitudes[j]
+                        idx++
+                    }
+                }
+                VibrationEffect.createWaveform(timings, amplitudes, -1)
             } else {
-                longArrayOf(0, 500, 200, 800)
+                val timings = if (count >= 3) {
+                    longArrayOf(0, 220, 750, 220, 750, 220)
+                } else {
+                    longArrayOf(0, 220)
+                }
+                VibrationEffect.createWaveform(timings, -1)
             }
-            val effect = VibrationEffect.createWaveform(timings, -1)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val vibrationAttributes = android.os.VibrationAttributes.createForUsage(
                     android.os.VibrationAttributes.USAGE_ALARM
