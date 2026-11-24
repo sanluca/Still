@@ -2,10 +2,8 @@
 <data-extraction-rules>
     <cloud-backup>
         <include domain="sharedpref" path="still_prefs.xml" />
-        <exclude domain="sharedpref" path="still_prefs.xml:prev_interruption_filter" />
     </cloud-backup>
     <device-transfer>
         <include domain="sharedpref" path="still_prefs.xml" />
-        <exclude domain="sharedpref" path="still_prefs.xml:prev_interruption_filter" />
     </device-transfer>
 </data-extraction-rules>

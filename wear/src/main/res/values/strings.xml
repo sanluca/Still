@@ -1,20 +1,25 @@
 <resources>
     <string name="app_name">Still Watch</string>
-    <string name="toast_sync_success">Session saved! 🧘‍♂️</string>
-    <string name="status_preparing">Prepare...</string>
-    <string name="status_extra">Extra ✨</string>
+    <string name="toast_sync_success">Session saved!</string>
+    <string name="status_preparing">Prepare…</string>
+    <string name="status_extra">Extra</string>
     <string name="status_still">Still</string>
     <string name="text_prepare">Prepare</string>
     <string name="button_save_extra">Save +%1$dm</string>
     <string name="button_pause">Pause</string>
     <string name="button_resume">Resume</string>
     <string name="button_start">Start</string>
-    <string name="settings_title">⚙️ Settings</string>
+    <string name="settings_title">Settings</string>
     <string name="settings_gong_sound">Gong Sound:</string>
     <string name="bell_name_gong">Gong</string>
     <string name="bell_name_crystal">Crystal</string>
     <string name="bell_name_keisu">Keisu</string>
     <string name="bell_name_tingsha">Tingsha</string>
+    <string name="bell_name_chime">Chime</string>
+    <string name="bell_name_water_bowl">Water Bowl</string>
+    <string name="bell_name_soft_bowl">Soft Bowl</string>
+    <string name="bell_name_feather">Feather</string>
+    <string name="bell_name_soft_gong">Soft Gong</string>
     <string name="settings_gong_volume">Bell Volume:</string>
     <string name="settings_alert_mode">Alert Mode:</string>
     <string name="alert_mode_both">Both</string>
@@ -27,4 +32,8 @@
     <string name="theme_summer">Summer</string>
     <string name="theme_autumn">Autumn</string>
     <string name="theme_winter">Winter</string>
+    <string name="complication_label">Still</string>
+    <string name="complication_description">Quick shortcut to start a meditation session in Still</string>
+    <string name="complication_short_text">Still</string>
+    <string name="settings_hr_authorize">Authorize Heart Rate</string>
 </resources>

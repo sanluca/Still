@@ -80,6 +80,9 @@ dependencies {
     implementation(libs.play.app.update)
     implementation(libs.play.app.update.ktx)
 
+    // Jetpack Media3 ExoPlayer per sottofondi ambientali .ogg/.mp3 in loop continuo
+    implementation(libs.androidx.media3.exoplayer)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

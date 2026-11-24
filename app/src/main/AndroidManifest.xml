@@ -16,11 +16,19 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
+    <!-- Permesso per riprogrammare i promemoria di meditazione opzionali dopo il riavvio -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- Permessi ufficiali Android 14+ (System Health Connect) -->
     <uses-permission android:name="android.permission.health.WRITE_MINDFULNESS" />
 
     <!-- Permessi di compatibilità per Android 13 e precedenti / App Health Connect -->
     <uses-permission android:name="androidx.health.permission.Mindfulness.WRITE" />
+
+    <!-- Contrassegna l'orientamento portrait come facoltativo per Play Console (Tablet, Chromebook, XR) -->
+    <uses-feature
+        android:name="android.hardware.screen.portrait"
+        android:required="false" />
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
@@ -81,6 +89,17 @@
             android:name=".StillTimerService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
+
+        <receiver
+            android:name=".MeditationReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>
