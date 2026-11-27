@@ -15,9 +15,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.view.WindowManager
+import android.util.Log
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -42,9 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -52,6 +50,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.wear.ambient.AmbientModeSupport
+import androidx.wear.tiles.TileService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -95,6 +94,12 @@ class MainActivity : FragmentActivity(), AmbientModeSupport.AmbientCallbackProvi
                     onPaletteSelected = { newPalette ->
                         selectedPalette = newPalette
                         saveColorPalette(this, newPalette)
+                        try {
+                            TileService.getUpdater(applicationContext).requestUpdate(StillTileService::class.java)
+                            Log.d("StillWear", "Richiesto aggiornamento Tile su cambio tema: ${newPalette.id}")
+                        } catch (e: Exception) {
+                            Log.w("StillWear", "Impossibile aggiornare Tile su cambio tema", e)
+                        }
                     }
                 )
             }
@@ -131,31 +136,16 @@ fun WearMeditationApp(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    val heartRatePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if ((granted || hasHeartRatePermission(context)) && StillTimerService.isServiceRunning) {
-            val hrIntent = Intent(context, StillTimerService::class.java).apply {
-                action = StillTimerService.ACTION_START_HR_SAMPLING
-            }
-            context.startService(hrIntent)
-        }
+    val serviceSnapshot by StillTimerService.timerState.collectAsState()
+    val initialSnapshot = remember { StillTimerService.timerState.value }
+    val initialRunning = StillTimerService.isServiceRunning || initialSnapshot.isRunning
+
+    var selectedTimeInSeconds by remember {
+        mutableIntStateOf(
+            if (initialRunning) initialSnapshot.initialTime else getSavedSelectedTime(context)
+        )
     }
 
-    fun requestHeartRatePermissionIfNeeded() {
-        if (!hasHeartRatePermission(context)) {
-            heartRatePermissionLauncher.launch(requiredHeartRatePermission())
-        }
-    }
-
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { _ ->
-        requestHeartRatePermissionIfNeeded()
-    }
-
-    var selectedTimeInSeconds by remember { mutableIntStateOf(getSavedSelectedTime(context)) }
-    
     var prepTimeSeconds by remember { mutableIntStateOf(getSavedPrepTime(context)) }
     var gongFreqHz by remember { mutableDoubleStateOf(getSavedGongFrequency(context)) }
     var gongVolumePercent by remember { mutableIntStateOf(getSavedGongVolume(context)) }
@@ -163,18 +153,43 @@ fun WearMeditationApp(
     val clockFormatter = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     var currentClockText by remember { mutableStateOf(clockFormatter.format(Date())) }
 
-    var isPreparing by remember { mutableStateOf(false) }
-    var prepTimeLeftSeconds by remember { mutableIntStateOf(0) }
+    var isPreparing by remember { mutableStateOf(if (initialRunning) initialSnapshot.isPreparing else false) }
+    var prepTimeLeftSeconds by remember { mutableIntStateOf(if (initialRunning) initialSnapshot.prepLeft else 0) }
 
     var timeLeftInSeconds by remember {
-        mutableIntStateOf(if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds)
+        mutableIntStateOf(
+            if (initialRunning) {
+                initialSnapshot.timeLeft
+            } else if (selectedTimeInSeconds == -1) {
+                0
+            } else {
+                selectedTimeInSeconds
+            }
+        )
     }
 
-    var isOvertime by remember { mutableStateOf(false) }
-    var overtimeSeconds by remember { mutableIntStateOf(0) }
+    var isOvertime by remember { mutableStateOf(if (initialRunning) initialSnapshot.isOvertime else false) }
+    var overtimeSeconds by remember { mutableIntStateOf(if (initialRunning) initialSnapshot.overtimeSeconds else 0) }
 
-    var isTimerRunning by remember { mutableStateOf(StillTimerService.isServiceRunning) }
-    var sessionStartTime by remember { mutableStateOf<Instant?>(null) }
+    var isTimerRunning by remember { mutableStateOf(initialRunning) }
+    var hasObservedRunningService by remember { mutableStateOf(initialRunning) }
+    var pendingStartAfterNotificationPermission by remember { mutableStateOf(false) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        Log.d("StillWear", "Esito permesso POST_NOTIFICATIONS: granted=$granted")
+        if (pendingStartAfterNotificationPermission) {
+            pendingStartAfterNotificationPermission = false
+            isTimerRunning = true
+        }
+    }
+
+    var sessionStartTime by remember {
+        mutableStateOf<Instant?>(
+            if (initialRunning && !initialSnapshot.isPreparing) Instant.now() else null
+        )
+    }
 
     val currentIsAmbient by rememberUpdatedState(isAmbient)
     val pendingAmbientTick = remember { PendingAmbientTick() }
@@ -284,10 +299,48 @@ fun WearMeditationApp(
         }
     }
 
+    // Sincronizzazione immediata dallo StateFlow del Service (evita il glitch di 500 ms al rientro dal chip)
+    LaunchedEffect(serviceSnapshot) {
+        if (serviceSnapshot.isRunning) {
+            hasObservedRunningService = true
+            if (!isTimerRunning) {
+                isTimerRunning = true
+            }
+            if (currentIsAmbient && !(serviceSnapshot.isOvertime && !isOvertime)) {
+                pendingAmbientTick.isPreparing = serviceSnapshot.isPreparing
+                pendingAmbientTick.prepLeft = serviceSnapshot.prepLeft
+                pendingAmbientTick.timeLeft = serviceSnapshot.timeLeft
+                pendingAmbientTick.isOvertime = serviceSnapshot.isOvertime
+                pendingAmbientTick.overtimeSeconds = serviceSnapshot.overtimeSeconds
+                pendingAmbientTick.initialTime = serviceSnapshot.initialTime
+                pendingAmbientTick.hasPending = true
+            } else {
+                pendingAmbientTick.hasPending = false
+                applyTickState(
+                    serviceSnapshot.isPreparing,
+                    serviceSnapshot.prepLeft,
+                    serviceSnapshot.timeLeft,
+                    serviceSnapshot.isOvertime,
+                    serviceSnapshot.overtimeSeconds,
+                    serviceSnapshot.initialTime
+                )
+            }
+        } else if (hasObservedRunningService && !StillTimerService.isServiceRunning && isTimerRunning) {
+            Log.d("StillWear", "Riallineamento UI: StillTimerService terminato esternamente")
+            hasObservedRunningService = false
+            isTimerRunning = false
+            isPreparing = false
+        }
+    }
+
     fun updateTimeSelection(newTime: Int) {
         selectedTimeInSeconds = newTime
         timeLeftInSeconds = if (newTime == -1) 0 else newTime
         saveSelectedTime(context, newTime)
+        try {
+            TileService.getUpdater(context.applicationContext).requestUpdate(StillTileService::class.java)
+        } catch (_: Exception) {
+        }
     }
 
     val progress = remember(timeLeftInSeconds, selectedTimeInSeconds) {
@@ -301,28 +354,26 @@ fun WearMeditationApp(
     val backgroundColor = if (isAmbient) Color.Black else MaterialTheme.colorScheme.background
     val overtimeColor = if (isAmbient) Color.White else OvertimeGold
     val prepColor = if (isAmbient) Color.White else MaterialTheme.colorScheme.tertiary
-    val currentView = LocalView.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val keepScreenAwake = isTimerRunning || isOvertime
 
-    // Con timer attivo o in overtime lo swipe-to-dismiss/back non chiude per errore l'Activity
-    BackHandler(enabled = isTimerRunning || isOvertime) { }
-
-    // Triplo presidio per non far spegnere lo schermo durante preparazione, meditazione e tempo extra
-    DisposableEffect(keepScreenAwake, lifecycleOwner) {
-        val window = context.findActivity()?.window
-        fun applyKeepScreenOn(awake: Boolean) {
-            currentView.keepScreenOn = awake
-            if (awake) {
-                window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            } else {
-                window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            }
-        }
-        applyKeepScreenOn(keepScreenAwake)
+    // Al rientro in primo piano riallinea subito lo stato dal Service e sincronizza eventuali sessioni pendenti
+    DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                applyKeepScreenOn(keepScreenAwake)
+                if (StillTimerService.isServiceRunning) {
+                    val snap = StillTimerService.timerState.value
+                    isTimerRunning = true
+                    if (snap.isRunning) {
+                        applyTickState(
+                            snap.isPreparing,
+                            snap.prepLeft,
+                            snap.timeLeft,
+                            snap.isOvertime,
+                            snap.overtimeSeconds,
+                            snap.initialTime
+                        )
+                    }
+                }
                 try {
                     flushPendingSessionsToPhone(context)
                 } catch (e: Exception) {
@@ -333,7 +384,6 @@ fun WearMeditationApp(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            applyKeepScreenOn(false)
         }
     }
 
@@ -368,6 +418,7 @@ fun WearMeditationApp(
                 }
             }
         } else {
+            hasObservedRunningService = false
             if (StillTimerService.isServiceRunning) {
                 val stopIntent = Intent(context, StillTimerService::class.java).apply {
                     action = StillTimerService.ACTION_STOP
@@ -381,11 +432,14 @@ fun WearMeditationApp(
 
     fun resetTimerState() {
         cancelGongVibration(context)
-        val stopIntent = Intent(context, StillTimerService::class.java).apply {
-            action = StillTimerService.ACTION_STOP
+        if (StillTimerService.isServiceRunning) {
+            val stopIntent = Intent(context, StillTimerService::class.java).apply {
+                action = StillTimerService.ACTION_STOP
+            }
+            context.startService(stopIntent)
+            StillTimerService.isServiceRunning = false
         }
-        context.startService(stopIntent)
-        StillTimerService.isServiceRunning = false
+        hasObservedRunningService = false
         StillTimerService.clearHeartRateSamples()
         pendingAmbientTick.hasPending = false
 
@@ -437,8 +491,7 @@ fun WearMeditationApp(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundColor)
-            .then(if (keepScreenAwake) Modifier.keepScreenOn() else Modifier),
+            .background(backgroundColor),
         contentAlignment = Alignment.Center
     ) {
         HorizontalPager(
@@ -475,12 +528,15 @@ fun WearMeditationApp(
                                         Manifest.permission.POST_NOTIFICATIONS
                                     ) != PackageManager.PERMISSION_GRANTED
                             if (needsNotificationPermission) {
+                                Log.d("StillWear", "Richiesta POST_NOTIFICATIONS prima di avviare StillTimerService")
+                                pendingStartAfterNotificationPermission = true
                                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                             } else {
-                                requestHeartRatePermissionIfNeeded()
+                                isTimerRunning = true
                             }
+                        } else {
+                            isTimerRunning = false
                         }
-                        isTimerRunning = !isTimerRunning
                     }
                 )
             } else {

@@ -55,7 +55,7 @@ class HealthConnectManager(private val context: Context) {
                 ),
                 mindfulnessSessionType = MindfulnessSessionRecord.MINDFULNESS_SESSION_TYPE_MEDITATION,
                 title = "Still",
-                notes = "Sessione meditativa registrata con Still"
+                notes = context.getString(R.string.health_session_notes)
             )
             healthConnectClient.insertRecords(listOf(record))
             true

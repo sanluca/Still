@@ -22,12 +22,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -473,7 +475,9 @@ fun StillSettingsDialog(
                                     }
                                 },
                                 enabled = isSoundEnabled && gongVolumePercent > 20,
-                                modifier = Modifier.size(width = 48.dp, height = 36.dp),
+                                modifier = Modifier
+                                    .widthIn(min = 48.dp)
+                                    .heightIn(min = 36.dp),
                                 contentPadding = PaddingValues(0.dp)
                             ) {
                                 Text("−", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -496,7 +500,9 @@ fun StillSettingsDialog(
                                     }
                                 },
                                 enabled = isSoundEnabled && gongVolumePercent < 100,
-                                modifier = Modifier.size(width = 48.dp, height = 36.dp),
+                                modifier = Modifier
+                                    .widthIn(min = 48.dp)
+                                    .heightIn(min = 36.dp),
                                 contentPadding = PaddingValues(0.dp)
                             ) {
                                 Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -623,8 +629,8 @@ fun StillSettingsDialog(
                                 OutlinedButton(
                                     onClick = onPickCustomAudio,
                                     shape = RoundedCornerShape(14.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(34.dp)
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    modifier = Modifier.heightIn(min = 38.dp)
                                 ) {
                                     Text(
                                         text = stringResource(
@@ -634,7 +640,9 @@ fun StillSettingsDialog(
                                                 R.string.settings_custom_audio_change
                                             }
                                         ),
-                                        fontSize = 12.sp
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -665,7 +673,9 @@ fun StillSettingsDialog(
                                         }
                                     },
                                     enabled = ambientVolumePercent > 10,
-                                    modifier = Modifier.size(width = 48.dp, height = 36.dp),
+                                    modifier = Modifier
+                                        .widthIn(min = 48.dp)
+                                        .heightIn(min = 36.dp),
                                     contentPadding = PaddingValues(0.dp)
                                 ) {
                                     Text("−", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -691,7 +701,9 @@ fun StillSettingsDialog(
                                         }
                                     },
                                     enabled = ambientVolumePercent < 100,
-                                    modifier = Modifier.size(width = 48.dp, height = 36.dp),
+                                    modifier = Modifier
+                                        .widthIn(min = 48.dp)
+                                        .heightIn(min = 36.dp),
                                     contentPadding = PaddingValues(0.dp)
                                 ) {
                                     Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -1201,7 +1213,8 @@ fun StillStatsDialog(
                                 text = stringResource(R.string.stats_best_streak_format, bestStreak),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f),
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -1356,7 +1369,7 @@ fun StillStatsDialog(
                                         Box(
                                             modifier = Modifier
                                                 .weight(1f)
-                                                .height(36.dp),
+                                                .heightIn(min = 36.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Box(
@@ -1388,6 +1401,13 @@ fun StillStatsDialog(
                                                 Text(
                                                     text = "$dayNumber",
                                                     fontSize = 13.sp,
+                                                    maxLines = 1,
+                                                    softWrap = false,
+                                                    autoSize = TextAutoSize.StepBased(
+                                                        minFontSize = 8.sp,
+                                                        maxFontSize = 13.sp,
+                                                        stepSize = 0.5.sp
+                                                    ),
                                                     fontWeight = if (hasMeditation || isToday) FontWeight.Bold else FontWeight.Normal,
                                                     color = dayTextColor,
                                                     style = TextStyle(fontFeatureSettings = "tnum")
@@ -1398,7 +1418,7 @@ fun StillStatsDialog(
                                         Spacer(
                                             modifier = Modifier
                                                 .weight(1f)
-                                                .height(36.dp)
+                                                .heightIn(min = 36.dp)
                                         )
                                     }
                                 }
@@ -1432,12 +1452,13 @@ fun StillStatsDialog(
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(38.dp)
+                                    .heightIn(min = 38.dp)
                             ) {
                                 Text(
                                     text = stringResource(R.string.button_export_history),
                                     style = MaterialTheme.typography.labelMedium,
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -1448,12 +1469,13 @@ fun StillStatsDialog(
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(38.dp)
+                                    .heightIn(min = 38.dp)
                             ) {
                                 Text(
                                     text = stringResource(R.string.button_import_history),
                                     style = MaterialTheme.typography.labelMedium,
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }

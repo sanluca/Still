@@ -6,12 +6,16 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,7 +37,7 @@ data class StillTimerState(
 )
 
 class StillTimerService : Service() {
-    private val serviceJob = Job()
+    private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
     private val ambientPlayer = AmbientSoundPlayer(serviceScope)
     private val activeDuckingGongs = AtomicInteger(0)
@@ -162,7 +166,18 @@ class StillTimerService : Service() {
                 plannedTime == -1 -> getString(R.string.notification_no_limit)
                 else -> getString(R.string.notification_meditating)
             }
-            startForeground(NOTIFICATION_ID, buildNotification(initialNotificationText))
+            val notification = buildNotification(initialNotificationText)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                Log.d("StillApp", "Avvio FGS StillTimerService (API 34+): type=MEDIA_PLAYBACK")
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                )
+            } else {
+                Log.d("StillApp", "Avvio FGS StillTimerService (<API 34)")
+                startForeground(NOTIFICATION_ID, notification)
+            }
             startTimer(freq, intervalMins, selectedTime, isResume, elapsedOffset, gongVolume, alertMode, intervalFreq, prepSeconds)
         } else if (intent?.action == "UPDATE_AMBIENT") {
             val newSoundscape = AmbientSoundscape.fromId(intent.getStringExtra("AMBIENT_SOUND"))
@@ -245,7 +260,8 @@ class StillTimerService : Service() {
                     this@StillTimerService,
                     freqHz,
                     repeatCount = repeatCount,
-                    volumePercent = volumePercent
+                    volumePercent = volumePercent,
+                    requestAudioFocus = !ambientPlayer.isPlaying()
                 )
             } finally {
                 if (activeDuckingGongs.decrementAndGet() <= 0) {

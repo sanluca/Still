@@ -36,4 +36,18 @@
     <string name="complication_description">Quick shortcut to start a meditation session in Still</string>
     <string name="complication_short_text">Still</string>
     <string name="settings_hr_authorize">Authorize Heart Rate</string>
+    <string name="tile_title">Still</string>
+    <string name="tile_status_active">Session active</string>
+    <string name="tile_status_preparing">Preparing…</string>
+    <string name="tile_status_overtime">Extra time</string>
+    <string name="tile_duration_minutes">%1$d min</string>
+    <string name="tile_duration_unlimited">∞ Unlimited</string>
+    <string name="tile_action_start">Start</string>
+    <string name="tile_action_open">Open</string>
+    <string name="ongoing_status_prepare_template">Prep #timer#</string>
+    <string name="ongoing_status_timer_template">Still #timer#</string>
+    <string name="ongoing_status_stopwatch_template">Still #stopwatch#</string>
+    <string name="ongoing_status_extra_template">+#stopwatch#</string>
+    <string name="ambient_minutes_format">%1$d min</string>
+    <string name="ambient_extra_minutes_format">+%1$d min</string>
 </resources>

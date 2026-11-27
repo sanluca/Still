@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -1102,7 +1103,9 @@ private fun StillPresetEditorDialog(
                                         }
                                     },
                                     enabled = isSoundEnabled && currentVol > 20,
-                                    modifier = Modifier.size(width = 48.dp, height = 36.dp),
+                                    modifier = Modifier
+                                        .widthIn(min = 48.dp)
+                                        .heightIn(min = 36.dp),
                                     contentPadding = PaddingValues(0.dp)
                                 ) {
                                     Text("−", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -1123,7 +1126,9 @@ private fun StillPresetEditorDialog(
                                         }
                                     },
                                     enabled = isSoundEnabled && currentVol < 100,
-                                    modifier = Modifier.size(width = 48.dp, height = 36.dp),
+                                    modifier = Modifier
+                                        .widthIn(min = 48.dp)
+                                        .heightIn(min = 36.dp),
                                     contentPadding = PaddingValues(0.dp)
                                 ) {
                                     Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -1275,15 +1280,17 @@ private fun StillPresetEditorDialog(
                                         )
                                     },
                                     shape = RoundedCornerShape(14.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(34.dp)
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    modifier = Modifier.heightIn(min = 38.dp)
                                 ) {
                                     Text(
                                         text = stringResource(
                                             if (customAmbientUri.isNullOrBlank()) R.string.settings_custom_audio_choose
                                             else R.string.settings_custom_audio_change
                                         ),
-                                        fontSize = 12.sp
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -1345,7 +1352,9 @@ private fun StillPresetEditorDialog(
                                             }
                                         },
                                         enabled = currentVol > 10,
-                                        modifier = Modifier.size(width = 48.dp, height = 36.dp),
+                                        modifier = Modifier
+                                            .widthIn(min = 48.dp)
+                                            .heightIn(min = 36.dp),
                                         contentPadding = PaddingValues(0.dp)
                                     ) {
                                         Text("−", fontSize = 18.sp, fontWeight = FontWeight.Bold)
@@ -1375,7 +1384,9 @@ private fun StillPresetEditorDialog(
                                             }
                                         },
                                         enabled = currentVol < 100,
-                                        modifier = Modifier.size(width = 48.dp, height = 36.dp),
+                                        modifier = Modifier
+                                            .widthIn(min = 48.dp)
+                                            .heightIn(min = 36.dp),
                                         contentPadding = PaddingValues(0.dp)
                                     ) {
                                         Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold)

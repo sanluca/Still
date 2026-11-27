@@ -5,13 +5,15 @@
 
     <!-- Permessi per la vibrazione aptica dell'orologio, CPU e sensori durante la meditazione -->
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
-    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission
+        android:name="android.permission.BODY_SENSORS"
+        android:maxSdkVersion="35" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
 
     <application
         android:allowBackup="false"
@@ -58,7 +60,7 @@
             </intent-filter>
             <meta-data
                 android:name="androidx.wear.tiles.PREVIEW"
-                android:resource="@drawable/still_icon" />
+                android:resource="@drawable/tile_preview" />
         </service>
 
         <!-- Complicazione per il quadrante (Watch Face Complication) -->
@@ -81,7 +83,7 @@
 
         <service
             android:name=".StillTimerService"
-            android:foregroundServiceType="specialUse"
+            android:foregroundServiceType="specialUse|health"
             android:exported="false">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"

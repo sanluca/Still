@@ -2,6 +2,7 @@
 
 package com.sanluca.still.wear
 
+import android.util.Log
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -22,17 +23,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -40,10 +45,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -72,6 +80,7 @@ fun WearTimerPage(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    val fontScale = LocalDensity.current.fontScale
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
@@ -81,6 +90,13 @@ fun WearTimerPage(
         val isPausedState = !isInitialState && !isTimerRunning && !isOvertime
         val showSideControls = isInitialState || isPausedState || isOvertime
         val canDecrease = selectedTimeInSeconds != -1
+
+        LaunchedEffect(maxWidth, maxHeight, fontScale) {
+            Log.d(
+                "StillWear",
+                "WearTimerPage layout: ${maxWidth.value.toInt()}x${maxHeight.value.toInt()}dp, fontScale=$fontScale"
+            )
+        }
 
         // Animazione di pulsazione lenta del respiro: attiva solo con timer in esecuzione e non in ambient
         val breathGlowAlphaState: State<Float>? = if (isTimerRunning && !isAmbient) {
@@ -200,85 +216,160 @@ fun WearTimerPage(
             }
         }
 
-        // 2. CONTENITORE INTERNO INSCRITTO (SAFE ZONE)
+        // 2. CONTENITORE INTERNO IN SAFE-ZONE CIRCOLARE REALE (>=14% verticale, >=14% orizzontale su ore 12/6, equatore ottimizzato)
+        val verticalSafePadding = diameter * 0.14f
+        val equatorHorizontalPadding = diameter * 0.065f
+        val polarExtraHorizontalPadding = diameter * 0.08f
+        val compactTopRow = fontScale > 1.25f && diameter < 210.dp
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = diameter * 0.10f, vertical = diameter * 0.11f),
+                .padding(horizontal = equatorHorizontalPadding, vertical = verticalSafePadding),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Fascia superiore (Ore 12)
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = currentClockText,
-                    fontSize = 10.sp,
-                    color = if (isAmbient) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                    style = TextStyle(
-                        fontFeatureSettings = "tnum",
-                        fontWeight = FontWeight.Normal
-                    )
-                )
-                Text(
-                    text = when {
-                        isPreparing -> stringResource(R.string.text_prepare)
-                        isOvertime -> stringResource(R.string.status_extra)
-                        else -> stringResource(R.string.status_still)
-                    },
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Normal,
-                    maxLines = 1,
-                    color = when {
-                        isAmbient -> Color.White.copy(alpha = 0.7f)
-                        isPreparing -> prepColor
-                        isOvertime -> overtimeColor
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
-                    }
-                )
+            // Fascia superiore (Ore 12) — dentro la safe-zone del cerchio (>=14.5% laterale)
+            val statusText = when {
+                isPreparing -> stringResource(R.string.text_prepare)
+                isOvertime -> stringResource(R.string.status_extra)
+                else -> stringResource(R.string.status_still)
+            }
+            val statusColor = when {
+                isAmbient -> Color.White.copy(alpha = 0.7f)
+                isPreparing -> prepColor
+                isOvertime -> overtimeColor
+                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+            }
+            val clockColor = if (isAmbient) {
+                Color.White.copy(alpha = 0.6f)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
             }
 
-            // Fascia centrale (Row)
-            val sideBtnSize = (diameter * 0.145f).coerceIn(26.dp, 32.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = polarExtraHorizontalPadding),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (compactTopRow) {
+                    Text(
+                        text = "$currentClockText · $statusText",
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        color = statusColor,
+                        style = TextStyle(
+                            fontFeatureSettings = "tnum",
+                            fontWeight = FontWeight.Normal
+                        )
+                    )
+                } else {
+                    Text(
+                        text = currentClockText,
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = clockColor,
+                        style = TextStyle(
+                            fontFeatureSettings = "tnum",
+                            fontWeight = FontWeight.Normal
+                        )
+                    )
+                    Text(
+                        text = statusText,
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = statusColor
+                    )
+                }
+            }
+
+            // Fascia centrale (Row sull'equatore del quadrante)
+            // Touch target >= 36 dp mantenendo la grafica circolare compatta ed equilibrata
+            val sideBtnTouchSize = 36.dp
+            val sideBtnVisualSize = (diameter * 0.15f).coerceIn(28.dp, 34.dp)
+            val ambientTimerText = when {
+                isPreparing -> stringResource(R.string.text_prepare)
+                isOvertime -> stringResource(R.string.ambient_extra_minutes_format, (overtimeSeconds / 60))
+                selectedTimeInSeconds == -1 -> "∞"
+                else -> stringResource(
+                    R.string.ambient_minutes_format,
+                    ((timeLeftInSeconds + 59) / 60).coerceAtLeast(1)
+                )
+            }
+            val interactiveTimerText = when {
+                isPreparing -> "${prepTimeLeftSeconds}s"
+                isOvertime -> "+${formatTime(overtimeSeconds)}"
+                selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> "∞"
+                else -> formatTime(timeLeftInSeconds)
+            }
+            val displayTimerText = if (isAmbient) ambientTimerText else interactiveTimerText
+
+            val equatorWidthDp = (diameter - equatorHorizontalPadding * 2).value
+            val timerSlotWidthDp = if (showSideControls && !isAmbient) {
+                (equatorWidthDp - sideBtnTouchSize.value * 2f - 6f).coerceAtLeast(64f)
+            } else {
+                (equatorWidthDp - 16f).coerceAtLeast(80f)
+            }
+            val baseTimerSp = when {
+                isAmbient && selectedTimeInSeconds != -1 -> diameter.value * 0.125f
+                isOvertime -> diameter.value * 0.135f
+                else -> diameter.value * 0.155f
+            }
+            val effectiveChars = displayTimerText.length.coerceAtLeast(3).toFloat()
+            val maxFittingSp = (timerSlotWidthDp / (effectiveChars * 0.64f * fontScale)).coerceAtLeast(12f)
+            val maxVerticalSp = ((diameter.value * 0.22f) / fontScale).coerceAtLeast(13f)
+            val adaptiveTimerSp = minOf(baseTimerSp, maxFittingSp, maxVerticalSp)
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                // Pulsante circolare [-]
-                Box(
-                    modifier = Modifier.size(sideBtnSize),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (showSideControls && !isAmbient) {
-                        val leftEnabled = !isInitialState || canDecrease
+                // Pulsante circolare [-] con touch target >= 36 dp
+                if (showSideControls && !isAmbient) {
+                    val leftEnabled = !isInitialState || canDecrease
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(sideBtnTouchSize)
+                            .clip(CircleShape)
+                            .clickable(
+                                enabled = leftEnabled,
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (isInitialState) {
+                                    if (selectedTimeInSeconds > 60) {
+                                        onUpdateTimeSelection(selectedTimeInSeconds - 60)
+                                    } else if (selectedTimeInSeconds == 60) {
+                                        onUpdateTimeSelection(-1)
+                                    }
+                                } else {
+                                    onResetTimer()
+                                }
+                            }
+                    ) {
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(sideBtnSize)
+                                .size(sideBtnVisualSize)
                                 .background(primaryColor.copy(alpha = if (leftEnabled) 0.12f else 0.04f), CircleShape)
                                 .border(1.dp, primaryColor.copy(alpha = if (leftEnabled) 0.40f else 0.15f), CircleShape)
-                                .clickable(
-                                    enabled = leftEnabled,
-                                    indication = null,
-                                    interactionSource = remember { MutableInteractionSource() }
-                                ) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    if (isInitialState) {
-                                        if (selectedTimeInSeconds > 60) {
-                                            onUpdateTimeSelection(selectedTimeInSeconds - 60)
-                                        } else if (selectedTimeInSeconds == 60) {
-                                            onUpdateTimeSelection(-1)
-                                        }
-                                    } else {
-                                        onResetTimer()
-                                    }
-                                }
                         ) {
+                            val iconSp = ((if (isInitialState) 15f else 12f) / fontScale.coerceAtLeast(1f)).coerceAtLeast(11f)
                             Text(
                                 text = if (isInitialState) "−" else "✕",
-                                fontSize = if (isInitialState) 15.sp else 11.sp,
+                                fontSize = iconSp.sp,
                                 fontWeight = FontWeight.Normal,
                                 color = if (leftEnabled) primaryColor else primaryColor.copy(alpha = 0.3f)
                             )
@@ -286,23 +377,19 @@ fun WearTimerPage(
                     }
                 }
 
-                // Testo del timer MM:SS
+                // Testo del timer adattivo (nessuna collisione con fontScale massimo)
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(horizontal = 4.dp),
+                        .padding(horizontal = 3.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = when {
-                            isPreparing -> "${prepTimeLeftSeconds}s"
-                            isOvertime -> "+${formatTime(overtimeSeconds)}"
-                            selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> "∞"
-                            else -> formatTime(timeLeftInSeconds)
-                        },
-                        fontSize = if (isOvertime) (diameter.value * 0.135f).sp else (diameter.value * 0.155f).sp,
+                        text = displayTimerText,
+                        fontSize = adaptiveTimerSp.sp,
                         maxLines = 1,
                         softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                         color = when {
                             isPreparing -> prepColor
                             isOvertime -> overtimeColor
@@ -316,33 +403,36 @@ fun WearTimerPage(
                     )
                 }
 
-                // Pulsante circolare [+]
-                Box(
-                    modifier = Modifier.size(sideBtnSize),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (showSideControls && !isAmbient) {
+                // Pulsante circolare [+] con touch target >= 36 dp
+                if (showSideControls && !isAmbient) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(sideBtnTouchSize)
+                            .clip(CircleShape)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (isInitialState) {
+                                    onUpdateTimeSelection(if (selectedTimeInSeconds == -1) 60 else selectedTimeInSeconds + 60)
+                                } else {
+                                    onSaveAndFinish(false)
+                                }
+                            }
+                    ) {
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(sideBtnSize)
+                                .size(sideBtnVisualSize)
                                 .background(primaryColor.copy(alpha = 0.12f), CircleShape)
                                 .border(1.dp, primaryColor.copy(alpha = 0.40f), CircleShape)
-                                .clickable(
-                                    indication = null,
-                                    interactionSource = remember { MutableInteractionSource() }
-                                ) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    if (isInitialState) {
-                                        onUpdateTimeSelection(if (selectedTimeInSeconds == -1) 60 else selectedTimeInSeconds + 60)
-                                    } else {
-                                        onSaveAndFinish(false)
-                                    }
-                                }
                         ) {
+                            val iconSp = ((if (isInitialState) 15f else 13f) / fontScale.coerceAtLeast(1f)).coerceAtLeast(11f)
                             Text(
                                 text = if (isInitialState) "+" else "✓",
-                                fontSize = if (isInitialState) 15.sp else 12.sp,
+                                fontSize = iconSp.sp,
                                 fontWeight = FontWeight.Normal,
                                 color = primaryColor
                             )
@@ -351,7 +441,7 @@ fun WearTimerPage(
                 }
             }
 
-            // Fascia inferiore (Ore 6)
+            // Fascia inferiore (Ore 6) — pillola elastica dentro safe-zone circolare
             val bottomPillColor = when {
                 isAmbient -> Color.Transparent
                 isOvertime -> overtimeColor
@@ -364,9 +454,11 @@ fun WearTimerPage(
                 isTimerRunning -> MaterialTheme.colorScheme.onSecondary
                 else -> MaterialTheme.colorScheme.onPrimary
             }
-            val pillWidth = (diameter * 0.46f).coerceIn(82.dp, 104.dp)
 
             Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = polarExtraHorizontalPadding),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Indicatore orizzontale delle 2 pagine (Timer / Impostazioni)
@@ -387,48 +479,52 @@ fun WearTimerPage(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                 }
 
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(width = pillWidth, height = 28.dp)
-                        .then(
-                            if (isAmbient) {
-                                Modifier.border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                            } else {
-                                Modifier
-                                    .background(bottomPillColor, RoundedCornerShape(14.dp))
-                                    .border(1.dp, bottomPillColor.copy(alpha = 0.8f), RoundedCornerShape(14.dp))
-                            }
-                        )
-                        .clickable(
-                            enabled = !isAmbient,
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            if (isOvertime) {
-                                onSaveAndFinish(true)
-                            } else {
-                                onToggleTimer()
-                            }
-                        }
-                ) {
+                if (isAmbient) {
+                    // In Ambient Mode evita di disegnare il bordo del pulsante disabilitato
+                    Spacer(modifier = Modifier.height(36.dp))
+                } else {
                     val bottomText = when {
                         isOvertime -> stringResource(R.string.button_save_extra, (overtimeSeconds / 60))
                         isTimerRunning -> stringResource(R.string.button_pause)
                         !isInitialState -> stringResource(R.string.button_resume)
                         else -> stringResource(R.string.button_start)
                     }
-                    Text(
-                        text = bottomText,
-                        fontSize = if (isOvertime || (!isInitialState && !isTimerRunning)) 10.sp else 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        color = bottomPillTextColor
-                    )
+                    val pillShape = RoundedCornerShape(50)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .widthIn(min = 84.dp, max = diameter * 0.68f)
+                            .heightIn(min = 36.dp)
+                            .clip(pillShape)
+                            .background(bottomPillColor, pillShape)
+                            .border(1.dp, bottomPillColor.copy(alpha = 0.8f), pillShape)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                if (isOvertime) {
+                                    onSaveAndFinish(true)
+                                } else {
+                                    onToggleTimer()
+                                }
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = bottomText,
+                            fontSize = 11.sp,
+                            lineHeight = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            color = bottomPillTextColor
+                        )
+                    }
                 }
             }
         }

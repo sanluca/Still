@@ -187,4 +187,5 @@
     <string name="reminder_channel_description">Gentle, silent reminders to take a moment for meditation</string>
     <string name="reminder_notification_title">Time to pause</string>
     <string name="reminder_notification_body">Take a few quiet minutes to meditate with Still.</string>
+    <string name="health_session_notes">Meditation session recorded with Still</string>
 </resources>

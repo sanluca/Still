@@ -396,6 +396,11 @@ fun StillTimerCenterStage(
                     }
                 }
 
+                val initialLabelAutoSize = TextAutoSize.StepBased(
+                    minFontSize = 8.sp,
+                    maxFontSize = 12.sp,
+                    stepSize = 0.5.sp
+                )
                 if (isPreparing) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -403,11 +408,20 @@ fun StillTimerCenterStage(
                     ) {
                         Text(
                             text = stringResource(R.string.text_prepare),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.tertiary
                         )
                         Text(
                             text = "${prepTimeLeftSeconds}s",
+                            maxLines = 1,
+                            softWrap = false,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 18.sp,
+                                maxFontSize = 48.sp,
+                                stepSize = 1.sp
+                            ),
                             style = MaterialTheme.typography.displayLarge.copy(
                                 fontSize = 48.sp,
                                 fontWeight = FontWeight.Light,
@@ -417,6 +431,7 @@ fun StillTimerCenterStage(
                         )
                     }
                 } else if (isOvertime) {
+                    val overtimeMaxSp = if (overtimeSeconds >= 6000) 40.sp else 48.sp
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
@@ -425,6 +440,8 @@ fun StillTimerCenterStage(
                     ) {
                         Text(
                             text = stringResource(R.string.text_extra),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleSmall,
                             color = overtimeColor
                         )
@@ -432,8 +449,13 @@ fun StillTimerCenterStage(
                             text = "+${formatTime(overtimeSeconds)}",
                             maxLines = 1,
                             softWrap = false,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 16.sp,
+                                maxFontSize = overtimeMaxSp,
+                                stepSize = 1.sp
+                            ),
                             style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = if (overtimeSeconds >= 6000) 40.sp else 48.sp,
+                                fontSize = overtimeMaxSp,
                                 fontWeight = FontWeight.Light,
                                 fontFeatureSettings = "tnum"
                             ),
@@ -444,12 +466,19 @@ fun StillTimerCenterStage(
                             text = initialLabelText ?: " ",
                             maxLines = 1,
                             softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            autoSize = initialLabelAutoSize,
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                             modifier = Modifier.alpha(if (initialLabelText != null) 1f else 0f)
                         )
                     }
                 } else {
+                    val digitsMaxSp = when {
+                        selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> 76.sp
+                        timeLeftInSeconds >= 6000 -> 44.sp
+                        else -> 54.sp
+                    }
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
@@ -465,12 +494,13 @@ fun StillTimerCenterStage(
                             maxLines = 1,
                             softWrap = false,
                             textAlign = TextAlign.Center,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 16.sp,
+                                maxFontSize = digitsMaxSp,
+                                stepSize = 1.sp
+                            ),
                             style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = when {
-                                    selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> 76.sp
-                                    timeLeftInSeconds >= 6000 -> 44.sp
-                                    else -> 54.sp
-                                },
+                                fontSize = digitsMaxSp,
                                 fontWeight = FontWeight.ExtraLight,
                                 fontFeatureSettings = "tnum",
                                 color = stillColors.timerDigitsColor,
@@ -482,6 +512,8 @@ fun StillTimerCenterStage(
                             text = initialLabelText ?: " ",
                             maxLines = 1,
                             softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            autoSize = initialLabelAutoSize,
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                             modifier = Modifier.alpha(if (initialLabelText != null) 1f else 0f)
@@ -617,6 +649,11 @@ fun StillTimerCenterStage(
                     onTouchToStart = if (isInitialState) onStartTimer else null
                 )
 
+                val wheelLabelAutoSize = TextAutoSize.StepBased(
+                    minFontSize = 8.sp,
+                    maxFontSize = 12.sp,
+                    stepSize = 0.5.sp
+                )
                 if (isPreparing) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -624,16 +661,26 @@ fun StillTimerCenterStage(
                     ) {
                         Text(
                             text = stringResource(R.string.text_prepare),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.tertiary
                         )
                         Text(
                             text = "${prepTimeLeftSeconds}s",
+                            maxLines = 1,
+                            softWrap = false,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 16.sp,
+                                maxFontSize = 42.sp,
+                                stepSize = 1.sp
+                            ),
                             style = MaterialTheme.typography.displayMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.tertiary
                         )
                     }
                 } else if (isOvertime) {
+                    val overtimeMaxSp = if (overtimeSeconds >= 6000) 36.sp else 42.sp
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
@@ -642,6 +689,8 @@ fun StillTimerCenterStage(
                     ) {
                         Text(
                             text = stringResource(R.string.text_extra),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.titleSmall,
                             color = overtimeColor
                         )
@@ -649,8 +698,13 @@ fun StillTimerCenterStage(
                             text = "+${formatTime(overtimeSeconds)}",
                             maxLines = 1,
                             softWrap = false,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 14.sp,
+                                maxFontSize = overtimeMaxSp,
+                                stepSize = 1.sp
+                            ),
                             style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = if (overtimeSeconds >= 6000) 36.sp else 42.sp,
+                                fontSize = overtimeMaxSp,
                                 fontWeight = FontWeight.Bold
                             ),
                             color = overtimeColor
@@ -660,12 +714,19 @@ fun StillTimerCenterStage(
                             text = initialLabelText ?: " ",
                             maxLines = 1,
                             softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            autoSize = wheelLabelAutoSize,
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                             modifier = Modifier.alpha(if (initialLabelText != null) 1f else 0f)
                         )
                     }
                 } else {
+                    val digitsMaxSp = when {
+                        selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> 72.sp
+                        timeLeftInSeconds >= 6000 -> 38.sp
+                        else -> 44.sp
+                    }
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
@@ -681,12 +742,13 @@ fun StillTimerCenterStage(
                             maxLines = 1,
                             softWrap = false,
                             textAlign = TextAlign.Center,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 14.sp,
+                                maxFontSize = digitsMaxSp,
+                                stepSize = 1.sp
+                            ),
                             style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = when {
-                                    selectedTimeInSeconds == -1 && !isTimerRunning && timeLeftInSeconds == 0 -> 72.sp
-                                    timeLeftInSeconds >= 6000 -> 38.sp
-                                    else -> 44.sp
-                                },
+                                fontSize = digitsMaxSp,
                                 fontWeight = FontWeight.Light,
                                 color = stillColors.timerDigitsColor,
                                 platformStyle = PlatformTextStyle(includeFontPadding = false)
@@ -697,6 +759,8 @@ fun StillTimerCenterStage(
                             text = initialLabelText ?: " ",
                             maxLines = 1,
                             softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            autoSize = wheelLabelAutoSize,
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
                             modifier = Modifier.alpha(if (initialLabelText != null) 1f else 0f)
