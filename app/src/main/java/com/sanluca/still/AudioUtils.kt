@@ -1,7 +1,10 @@
 package com.sanluca.still
 
+import android.content.BroadcastReceiver
 import android.content.ContentResolver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
@@ -16,7 +19,9 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.OpenableColumns
+import android.util.Log
 import androidx.annotation.RawRes
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes as Media3AudioAttributes
 import androidx.media3.common.C
@@ -35,6 +40,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -401,7 +407,7 @@ class AmbientSoundPlayer(
         customUri: String?,
         onPlaybackError: (() -> Unit)?
     ): Job = when {
-        soundscape == AmbientSoundscape.DRONE -> launchDroneStreamJob(fadeInSeconds)
+        soundscape == AmbientSoundscape.DRONE -> launchDroneStreamJob(appContext, fadeInSeconds)
         soundscape == AmbientSoundscape.CUSTOM -> launchExoPlayerJob(
             appContext = appContext,
             mediaUri = null,
@@ -463,6 +469,7 @@ class AmbientSoundPlayer(
         val released = AtomicBoolean(false)
         val errorNotified = AtomicBoolean(false)
         val playbackFailed = AtomicBoolean(false)
+        val stopRequestedBySystem = AtomicBoolean(false)
 
         try {
             val audioAttrs = Media3AudioAttributes.Builder()
@@ -471,7 +478,8 @@ class AmbientSoundPlayer(
                 .build()
 
             val exoPlayer = ExoPlayer.Builder(appContext)
-                .setAudioAttributes(audioAttrs, false)
+                .setAudioAttributes(audioAttrs, true)
+                .setHandleAudioBecomingNoisy(true)
                 .build()
             player = exoPlayer
 
@@ -486,7 +494,18 @@ class AmbientSoundPlayer(
             exoPlayer.repeatMode = Player.REPEAT_MODE_ONE
             exoPlayer.volume = 0f
             exoPlayer.addListener(object : Player.Listener {
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    if (!playWhenReady &&
+                        (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY ||
+                            reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS)
+                    ) {
+                        Log.d("StillApp", "ExoPlayer ambient messo in pausa dal sistema: reason=$reason -> stop")
+                        stopRequestedBySystem.set(true)
+                    }
+                }
+
                 override fun onPlayerError(error: PlaybackException) {
+                    Log.w("StillApp", "Errore ExoPlayer ambient: ${error.errorCodeName}", error)
                     playbackFailed.set(true)
                     if (errorNotified.compareAndSet(false, true)) {
                         onPlaybackError?.invoke()
@@ -509,7 +528,7 @@ class AmbientSoundPlayer(
             var currentDuckGain = targetDuckGain
             var finishedFadeOut = false
 
-            while (isActive && !finishedFadeOut && !playbackFailed.get()) {
+            while (isActive && !finishedFadeOut && !playbackFailed.get() && !stopRequestedBySystem.get()) {
                 val nowMs = SystemClock.elapsedRealtime()
                 if (fadeOutRequested && !fadeOutActive) {
                     fadeOutActive = true
@@ -557,6 +576,11 @@ class AmbientSoundPlayer(
                     synchronized(controlLock) {
                         if (activeExoHandle?.first === capturedPlayer) {
                             activeExoHandle = null
+                            if (stopRequestedBySystem.get()) {
+                                activeSoundscape = AmbientSoundscape.OFF
+                                activeCustomUri = null
+                                fadeOutRequested = false
+                            }
                         }
                     }
                     releaseExoPlayer(capturedPlayer, released)
@@ -566,9 +590,29 @@ class AmbientSoundPlayer(
     }
 
     private fun launchDroneStreamJob(
+        appContext: Context,
         fadeInSeconds: Double
     ): Job = scope.launch(Dispatchers.Default) {
         var audioTrack: AudioTrack? = null
+        val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        var focusRequest: AudioFocusRequest? = null
+        var focusRequested = false
+        var noisyReceiverRegistered = false
+        val focusGainScale = AtomicReference(1.0)
+        val focusPaused = AtomicBoolean(false)
+        val stopRequestedBySystem = AtomicBoolean(false)
+
+        val noisyReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                    Log.d("StillApp", "Drone ambient: ACTION_AUDIO_BECOMING_NOISY -> stop")
+                    stopRequestedBySystem.set(true)
+                    fadeOutRequested = true
+                    activeFadeOutSeconds = 0.05
+                }
+            }
+        }
+
         // Pre-allocazione completa prima del ciclo di streaming (zero allocazioni nel loop)
         val pcmBuffer = ShortArray(CHUNK_FRAMES * 2)
         val lpL = BiquadFilter()
@@ -603,8 +647,63 @@ class AmbientSoundPlayer(
 
         var currentVolGain = targetVolumeGain
         var currentDuckGain = targetDuckGain
+        var currentFocusGain = 1.0
 
         try {
+            val droneAudioAttrs = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+
+            if (audioManager != null) {
+                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(droneAudioAttrs)
+                    .setOnAudioFocusChangeListener { focusChange ->
+                        when (focusChange) {
+                            AudioManager.AUDIOFOCUS_LOSS -> {
+                                Log.d("StillApp", "Drone ambient: AUDIOFOCUS_LOSS -> stop")
+                                stopRequestedBySystem.set(true)
+                                focusGainScale.set(0.0)
+                                fadeOutRequested = true
+                                activeFadeOutSeconds = 0.15
+                            }
+                            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                                Log.d("StillApp", "Drone ambient: AUDIOFOCUS_LOSS_TRANSIENT -> pausa")
+                                focusPaused.set(true)
+                            }
+                            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                                Log.d("StillApp", "Drone ambient: AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> duck")
+                                focusGainScale.set(0.25)
+                            }
+                            AudioManager.AUDIOFOCUS_GAIN -> {
+                                Log.d("StillApp", "Drone ambient: AUDIOFOCUS_GAIN -> ripresa")
+                                focusPaused.set(false)
+                                focusGainScale.set(1.0)
+                            }
+                        }
+                    }
+                    .build()
+                focusRequest = request
+                val focusResult = audioManager.requestAudioFocus(request)
+                focusRequested = true
+                if (focusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                    Log.w("StillApp", "Drone ambient: AudioFocus non concesso (result=$focusResult)")
+                    return@launch
+                }
+            }
+
+            try {
+                ContextCompat.registerReceiver(
+                    appContext,
+                    noisyReceiver,
+                    IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
+                noisyReceiverRegistered = true
+            } catch (e: Exception) {
+                Log.w("StillApp", "Drone ambient: registrazione ACTION_AUDIO_BECOMING_NOISY fallita", e)
+            }
+
             val minBufBytes = AudioTrack.getMinBufferSize(
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_OUT_STEREO,
@@ -614,12 +713,7 @@ class AmbientSoundPlayer(
             val bufferSizeBytes = maxOf(minBufBytes * 2, CHUNK_FRAMES * 2 * 2 * 2)
 
             audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
+                .setAudioAttributes(droneAudioAttrs)
                 .setAudioFormat(
                     AudioFormat.Builder()
                         .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -635,9 +729,26 @@ class AmbientSoundPlayer(
             audioTrack.play()
 
             var finishedFadeOut = false
-            while (isActive && !finishedFadeOut) {
+            while (isActive && !finishedFadeOut && !stopRequestedBySystem.get()) {
+                if (focusPaused.get()) {
+                    if (audioTrack.playState == AudioTrack.PLAYSTATE_PLAYING) {
+                        try {
+                            audioTrack.pause()
+                        } catch (_: Exception) {
+                        }
+                    }
+                    delay(100L)
+                    continue
+                } else if (audioTrack.playState != AudioTrack.PLAYSTATE_PLAYING) {
+                    try {
+                        audioTrack.play()
+                    } catch (_: Exception) {
+                    }
+                }
+
                 val targetVol = targetVolumeGain
                 val targetDuck = targetDuckGain
+                val targetFocus = focusGainScale.get()
 
                 if (fadeOutRequested && !fadeOutActive) {
                     fadeOutActive = true
@@ -665,9 +776,10 @@ class AmbientSoundPlayer(
                         currentEnvelope = 1.0
                     }
 
-                    // Smussamento volume e ducking (zero zipper noise)
+                    // Smussamento volume, ducking e audio focus (zero zipper noise)
                     currentVolGain += (targetVol - currentVolGain) * 0.0008
                     currentDuckGain += (targetDuck - currentDuckGain) * 0.00025
+                    currentFocusGain += (targetFocus - currentFocusGain) * 0.001
 
                     val sampleL: Double
                     val sampleR: Double
@@ -703,7 +815,7 @@ class AmbientSoundPlayer(
                         sampleR = lpR.process(rawR)
                     }
 
-                    val totalGain = currentEnvelope * currentVolGain * currentDuckGain
+                    val totalGain = currentEnvelope * currentVolGain * currentDuckGain * currentFocusGain
                     val outL = tanh(sampleL * totalGain) * 32767.0
                     val outR = tanh(sampleR * totalGain) * 32767.0
 
@@ -717,7 +829,7 @@ class AmbientSoundPlayer(
             }
 
             // Scrive un breve blocco di silenzio dopo il fade-out completo per chiudere pulito il buffer hardware
-            if (finishedFadeOut && isActive) {
+            if (finishedFadeOut && isActive && !stopRequestedBySystem.get()) {
                 pcmBuffer.fill(0)
                 audioTrack.write(pcmBuffer, 0, CHUNK_FRAMES * 2, AudioTrack.WRITE_BLOCKING)
             }
@@ -726,6 +838,18 @@ class AmbientSoundPlayer(
         } catch (_: Exception) {
             // Gestione sicura in caso di indisponibilita temporanea del mixer audio
         } finally {
+            if (noisyReceiverRegistered) {
+                try {
+                    appContext.unregisterReceiver(noisyReceiver)
+                } catch (_: Exception) {
+                }
+            }
+            if (focusRequested && focusRequest != null) {
+                try {
+                    audioManager?.abandonAudioFocusRequest(focusRequest)
+                } catch (_: Exception) {
+                }
+            }
             try {
                 if (audioTrack?.playState == AudioTrack.PLAYSTATE_PLAYING) {
                     audioTrack.pause()
@@ -753,7 +877,8 @@ suspend fun playGongSound(
     context: Context,
     frequencyHz: Double = 432.0,
     repeatCount: Int = 1,
-    volumePercent: Int = 100
+    volumePercent: Int = 100,
+    requestAudioFocus: Boolean = true
 ) {
     val sampleRate = 44100
     val isTingsha = frequencyHz > 2500.0
@@ -977,18 +1102,28 @@ suspend fun playGongSound(
     }
 
     var audioTrack: AudioTrack? = null
-    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-        .setAudioAttributes(
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                .build()
-        )
-        .build()
+    val audioManager = if (requestAudioFocus) {
+        context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    } else {
+        null
+    }
+    val focusRequest = if (audioManager != null) {
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .build()
+    } else {
+        null
+    }
 
     try {
-        audioManager.requestAudioFocus(focusRequest)
+        if (focusRequest != null) {
+            audioManager?.requestAudioFocus(focusRequest)
+        }
         audioTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -1029,7 +1164,9 @@ suspend fun playGongSound(
             audioTrack?.stop()
         } catch (_: Exception) {}
         audioTrack?.release()
-        audioManager.abandonAudioFocusRequest(focusRequest)
+        if (focusRequest != null) {
+            audioManager?.abandonAudioFocusRequest(focusRequest)
+        }
     }
 }
 

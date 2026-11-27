@@ -9,6 +9,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -17,16 +18,24 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.wear.ongoing.OngoingActivity
 import androidx.wear.ongoing.Status
+import androidx.wear.tiles.TileService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+
+private const val LOG_TAG = "StillWear"
 
 private const val PERMISSION_READ_HEART_RATE = "android.permission.health.READ_HEART_RATE"
 
@@ -42,8 +51,18 @@ data class HeartRateSummary(
     val avgBpm: Int? = null
 )
 
+data class WearTimerSnapshot(
+    val isRunning: Boolean = false,
+    val isPreparing: Boolean = false,
+    val prepLeft: Int = 0,
+    val timeLeft: Int = 300,
+    val isOvertime: Boolean = false,
+    val overtimeSeconds: Int = 0,
+    val initialTime: Int = 300
+)
+
 class StillTimerService : Service() {
-    private val serviceJob = Job()
+    private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
 
     @Volatile private var isTimerRunning = false
@@ -58,6 +77,8 @@ class StillTimerService : Service() {
 
     companion object {
         @Volatile var isServiceRunning = false
+        private val _timerState = MutableStateFlow(WearTimerSnapshot())
+        val timerState: StateFlow<WearTimerSnapshot> = _timerState.asStateFlow()
         private val hrLock = Any()
         private var hrStartBpm: Int? = null
         private var hrEndBpm: Int? = null
@@ -119,7 +140,7 @@ class StillTimerService : Service() {
         super.onCreate()
         val channel = NotificationChannel(CHANNEL_ID_TIMER, getString(R.string.app_name), NotificationManager.IMPORTANCE_LOW)
         val alarmChannel = NotificationChannel(CHANNEL_ID_ALARM, getString(R.string.app_name), NotificationManager.IMPORTANCE_HIGH).apply {
-            // Il suono e la vibrazione sono gestiti dal gong del timer: il canale serve solo al full-screen intent
+            // Il suono e la vibrazione sono gestiti dal gong del timer
             setSound(null, null)
             enableVibration(false)
         }
@@ -151,28 +172,142 @@ class StillTimerService : Service() {
                 .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
                 .setOngoing(true)
 
-            // Ongoing Activity: chip attivo sul quadrante e voce nei recenti per rientrare nel timer
-            OngoingActivity.Builder(applicationContext, NOTIFICATION_ID_TIMER, notificationBuilder)
-                .setStaticIcon(R.drawable.ic_still_complication)
-                .setTouchIntent(pendingIntent)
-                .setStatus(Status.Builder().addTemplate(getString(R.string.status_timer)).build())
-                .build()
-                .apply(applicationContext)
+            val initialOngoingStatus = when {
+                prepTime > 0 -> buildPrepareOngoingStatus(prepTime)
+                isOvertimeStart -> buildOvertimeOngoingStatus(overtimeSecsStart)
+                initialTime == -1 -> buildUnlimitedOngoingStatus(selectedTime.coerceAtLeast(0))
+                else -> buildCountdownOngoingStatus(selectedTime, initialTime)
+            }
 
-            startForeground(NOTIFICATION_ID_TIMER, notificationBuilder.build())
+            // Ongoing Activity dinamica: chip attivo sul quadrante e voce nei recenti per rientrare nel timer
+            try {
+                OngoingActivity.Builder(applicationContext, NOTIFICATION_ID_TIMER, notificationBuilder)
+                    .setStaticIcon(R.drawable.ic_still_complication)
+                    .setTouchIntent(pendingIntent)
+                    .setStatus(initialOngoingStatus)
+                    .build()
+                    .apply(applicationContext)
+                Log.d(
+                    LOG_TAG,
+                    "OngoingActivity creata: prep=$prepTime, overtime=$isOvertimeStart, initialTime=$initialTime, selectedTime=$selectedTime"
+                )
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "Errore creazione OngoingActivity", e)
+            }
+
+            val hrGranted = hasHeartRatePermission(this)
+            val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                if (hrGranted) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
+                } else {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                }
+            } else {
+                0
+            }
+            val notification = notificationBuilder.build()
+            Log.d(
+                LOG_TAG,
+                "Avvio FGS StillTimerService: hrGranted=$hrGranted, fgsType=$fgsType"
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                try {
+                    startForeground(NOTIFICATION_ID_TIMER, notification, fgsType)
+                } catch (e: SecurityException) {
+                    Log.w(
+                        LOG_TAG,
+                        "SecurityException su startForeground con fgsType=$fgsType, fallback a SPECIAL_USE",
+                        e
+                    )
+                    startForeground(
+                        NOTIFICATION_ID_TIMER,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                    )
+                }
+            } else {
+                startForeground(NOTIFICATION_ID_TIMER, notification)
+            }
+
             startTimer(freq, selectedTime, prepTime, isOvertimeStart, overtimeSecsStart, initialTime, alertMode, gongVolume)
         } else if (intent?.action == ACTION_START_HR_SAMPLING) {
             if (isTimerRunning && !isCurrentlyPreparing) {
                 startHeartRateSamplingIfPermitted()
             }
         } else if (intent?.action == ACTION_STOP) {
+            Log.d(LOG_TAG, "Ricevuto ACTION_STOP su StillTimerService")
             stopTimer()
             stopSelf(startId)
         }
         return START_NOT_STICKY
     }
 
+    private fun buildPrepareOngoingStatus(prepSeconds: Int): Status {
+        val endRealtime = SystemClock.elapsedRealtime() + prepSeconds.coerceAtLeast(0) * 1000L
+        return Status.Builder()
+            .addTemplate(getString(R.string.ongoing_status_prepare_template))
+            .addPart("timer", Status.TimerPart(endRealtime, -1L, prepSeconds.coerceAtLeast(1) * 1000L))
+            .build()
+    }
+
+    private fun buildCountdownOngoingStatus(remainingSeconds: Int, totalSeconds: Int): Status {
+        val endRealtime = SystemClock.elapsedRealtime() + remainingSeconds.coerceAtLeast(0) * 1000L
+        val totalMs = totalSeconds.coerceAtLeast(remainingSeconds).coerceAtLeast(1) * 1000L
+        return Status.Builder()
+            .addTemplate(getString(R.string.ongoing_status_timer_template))
+            .addPart("timer", Status.TimerPart(endRealtime, -1L, totalMs))
+            .build()
+    }
+
+    private fun buildUnlimitedOngoingStatus(elapsedSeconds: Int): Status {
+        val startRealtime = SystemClock.elapsedRealtime() - elapsedSeconds.coerceAtLeast(0) * 1000L
+        return Status.Builder()
+            .addTemplate(getString(R.string.ongoing_status_stopwatch_template))
+            .addPart("stopwatch", Status.StopwatchPart(startRealtime))
+            .build()
+    }
+
+    private fun buildOvertimeOngoingStatus(overtimeSeconds: Int): Status {
+        val startRealtime = SystemClock.elapsedRealtime() - overtimeSeconds.coerceAtLeast(0) * 1000L
+        return Status.Builder()
+            .addTemplate(getString(R.string.ongoing_status_extra_template))
+            .addPart("stopwatch", Status.StopwatchPart(startRealtime))
+            .build()
+    }
+
+    private fun updateOngoingActivityStatus(status: Status, phaseLabel: String) {
+        try {
+            val ongoing = OngoingActivity.recoverOngoingActivity(applicationContext)
+            if (ongoing != null) {
+                ongoing.update(applicationContext, status)
+                Log.d(LOG_TAG, "OngoingActivity aggiornata: fase=$phaseLabel")
+            } else {
+                Log.w(LOG_TAG, "OngoingActivity non recuperata per aggiornamento fase=$phaseLabel")
+            }
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "Errore aggiornamento OngoingActivity fase=$phaseLabel", e)
+        }
+    }
+
+    private fun requestTileUpdate(reason: String) {
+        try {
+            TileService.getUpdater(applicationContext).requestUpdate(StillTileService::class.java)
+            Log.d(LOG_TAG, "Richiesto aggiornamento Tile: reason=$reason")
+        } catch (e: Exception) {
+            Log.w(LOG_TAG, "Impossibile richiedere aggiornamento Tile: reason=$reason", e)
+        }
+    }
+
     private fun broadcastState(isPreparing: Boolean, prepLeft: Int, timeLeft: Int, isOvertime: Boolean, overtimeSec: Int, initialTime: Int) {
+        _timerState.value = WearTimerSnapshot(
+            isRunning = isTimerRunning,
+            isPreparing = isPreparing,
+            prepLeft = prepLeft,
+            timeLeft = timeLeft,
+            isOvertime = isOvertime,
+            overtimeSeconds = overtimeSec,
+            initialTime = initialTime
+        )
         val intent = Intent(ACTION_TIMER_TICK).apply {
             setPackage(packageName)
             putExtra(EXTRA_IS_PREPARING, isPreparing)
@@ -218,11 +353,27 @@ class StillTimerService : Service() {
         // In modalità senza limiti (-1) il conteggio parte da 0 (il valore -1 è solo un marcatore)
         val baseTimeLeft = if (initialSelectedTime == -1) startingTimeLeft.coerceAtLeast(0) else startingTimeLeft
 
+        _timerState.value = WearTimerSnapshot(
+            isRunning = true,
+            isPreparing = prepTimeSeconds > 0,
+            prepLeft = prepTimeSeconds.coerceAtLeast(0),
+            timeLeft = baseTimeLeft,
+            isOvertime = isOvertimeStart,
+            overtimeSeconds = overtimeSecsStart,
+            initialTime = initialSelectedTime
+        )
+        Log.d(
+            LOG_TAG,
+            "Transizione stato -> START: prep=$prepTimeSeconds, baseTimeLeft=$baseTimeLeft, initial=$initialSelectedTime, overtimeStart=$isOvertimeStart"
+        )
+        requestTileUpdate("start")
+
         timerJob = serviceScope.launch {
             try {
                 // 1. CONTO ALLA ROVESCIA DI PREPARAZIONE
                 var prepLeft = prepTimeSeconds
                 if (prepLeft > 0) {
+                    Log.d(LOG_TAG, "Transizione stato -> PREPARAZIONE (${prepLeft}s)")
                     while (prepLeft > 0 && isTimerRunning) {
                         broadcastState(true, prepLeft, baseTimeLeft, false, 0, initialSelectedTime)
                         delay(1000L)
@@ -232,6 +383,18 @@ class StillTimerService : Service() {
                 isCurrentlyPreparing = false
 
                 if (!isTimerRunning) return@launch
+
+                if (prepTimeSeconds > 0) {
+                    Log.d(LOG_TAG, "Transizione stato -> ATTIVO (fine preparazione)")
+                    val activeStatus = if (initialSelectedTime == -1) {
+                        buildUnlimitedOngoingStatus(baseTimeLeft)
+                    } else {
+                        buildCountdownOngoingStatus(baseTimeLeft, initialSelectedTime)
+                    }
+                    updateOngoingActivityStatus(activeStatus, "active")
+                    broadcastState(false, 0, baseTimeLeft, isOvertimeStart, overtimeSecsStart, initialSelectedTime)
+                    requestTileUpdate("phase_active")
+                }
 
                 // 2. INIZIO EFFETTIVO MEDITAZIONE CON GONG AUDIO E/O VIBRAZIONE
                 if (prepTimeSeconds >= 0) {
@@ -276,6 +439,10 @@ class StillTimerService : Service() {
                             timeLeft = 0
                             isOvertime = true
                             overtimeSec = 0
+                            Log.d(LOG_TAG, "Transizione stato -> OVERTIME")
+                            updateOngoingActivityStatus(buildOvertimeOngoingStatus(0), "overtime")
+                            broadcastState(false, 0, 0, true, 0, initialSelectedTime)
+                            requestTileUpdate("phase_overtime")
 
                             if (shouldVibrate) {
                                 triggerHapticGong(this@StillTimerService, repeatCount = 3)
@@ -287,13 +454,12 @@ class StillTimerService : Service() {
                                 }
                             }
 
-                            // Risveglia e riporta in primo piano la schermata con i pulsanti per salvare
-                            // (full-screen intent: l'avvio diretto di Activity dal background è bloccato dal sistema)
+                            // Notifica di fine sessione con tap diretto sulla schermata di salvataggio (senza full-screen intent)
                             try {
                                 val openAppIntent = Intent(this@StillTimerService, MainActivity::class.java).apply {
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
                                 }
-                                val fullScreenPendingIntent = PendingIntent.getActivity(
+                                val contentPendingIntent = PendingIntent.getActivity(
                                     this@StillTimerService,
                                     1,
                                     openAppIntent,
@@ -304,14 +470,13 @@ class StillTimerService : Service() {
                                     .setContentText(getString(R.string.status_extra))
                                     .setSmallIcon(R.drawable.ic_still_complication)
                                     .setCategory(Notification.CATEGORY_ALARM)
-                                    .setContentIntent(fullScreenPendingIntent)
-                                    .setFullScreenIntent(fullScreenPendingIntent, true)
+                                    .setContentIntent(contentPendingIntent)
                                     .setAutoCancel(true)
                                     .build()
                                 getSystemService(NotificationManager::class.java)
                                     .notify(NOTIFICATION_ID_ALARM, alarmNotification)
                             } catch (e: Exception) {
-                                e.printStackTrace()
+                                Log.e(LOG_TAG, "Errore invio notifica fine sessione", e)
                             }
                         }
                     } else {
@@ -330,10 +495,12 @@ class StillTimerService : Service() {
     private fun startHeartRateSamplingIfPermitted() {
         if (!isTimerRunning || isCurrentlyPreparing || hrJob?.isActive == true) return
         if (!hasHeartRatePermission(this)) {
+            Log.d(LOG_TAG, "Campionamento HR saltato: permesso sensore non concesso")
             return
         }
         val sensorManager = getSystemService(SENSOR_SERVICE) as? SensorManager ?: return
         val hrSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE) ?: return
+        Log.d(LOG_TAG, "Avvio campionamento HR silenzioso in StillTimerService")
 
         hrJob = serviceScope.launch(Dispatchers.Default) {
             var burstIndex = 0
@@ -366,7 +533,12 @@ class StillTimerService : Service() {
                         } else {
                             activeHrSensorManager = sensorManager
                             activeHrListener = listener
-                            sensorManager.registerListener(listener, hrSensor, SensorManager.SENSOR_DELAY_UI)
+                            try {
+                                sensorManager.registerListener(listener, hrSensor, SensorManager.SENSOR_DELAY_UI)
+                            } catch (e: SecurityException) {
+                                Log.w(LOG_TAG, "SecurityException su registerListener TYPE_HEART_RATE", e)
+                                false
+                            }
                         }
                     }
                     if (!registered) {
@@ -379,6 +551,9 @@ class StillTimerService : Service() {
                         delay(500L)
                         step++
                     }
+                } catch (e: SecurityException) {
+                    Log.w(LOG_TAG, "SecurityException durante campionamento HR", e)
+                    break
                 } finally {
                     synchronized(hrSensorLock) {
                         if (activeHrListener === listener) {
@@ -414,9 +589,14 @@ class StillTimerService : Service() {
     }
 
     private fun stopTimer() {
+        val wasRunning = isTimerRunning || isServiceRunning
         isTimerRunning = false
         isServiceRunning = false
         isCurrentlyPreparing = false
+        _timerState.value = _timerState.value.copy(
+            isRunning = false,
+            isPreparing = false
+        )
         timerJob?.cancel()
         timerJob = null
         gongJob?.cancel()
@@ -427,6 +607,10 @@ class StillTimerService : Service() {
         cancelGongVibration(this)
         getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID_ALARM)
         releaseWakeLock()
+        if (wasRunning) {
+            Log.d(LOG_TAG, "Transizione stato -> STOP (FGS fermato)")
+            requestTileUpdate("stop")
+        }
     }
 
     @Synchronized

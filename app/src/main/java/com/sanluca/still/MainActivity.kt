@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -567,6 +568,7 @@ fun MeditationTimerScreen(
             overtimeSeconds = serviceState.overtimeSeconds
             sessionStartTime = serviceState.sessionStartEpochMilli?.let { Instant.ofEpochMilli(it) }
         } else if (hasStartedFromUi && isTimerRunning) {
+            Log.d("StillApp", "Riallineamento UI: StillTimerService non più attivo")
             isTimerRunning = false
             isPreparing = false
             prepTimeLeftSeconds = 0
@@ -873,7 +875,7 @@ fun MeditationTimerScreen(
     val isCompactHeight = LocalConfiguration.current.screenHeightDp < 640
 
     Box(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .then(if (keepScreenAwake) Modifier.keepScreenOn() else Modifier)
     ) {
@@ -883,7 +885,7 @@ fun MeditationTimerScreen(
             isOvertime = isOvertime
         )
         Column(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp, vertical = if (isCompactHeight) 10.dp else 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
