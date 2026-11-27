@@ -1,4 +1,4 @@
-# Still - Minimal Zen Timer (v3.0.0)
+# Still - Minimal Zen Timer (v3.1.0)
 
 [🇮🇹 Versione Italiana](#-versione-italiana) | [🇬🇧 English Version](#-english-version) | [▶ Google Play Store](https://play.google.com/store/apps/details?id=com.sanluca.still)
 
@@ -10,6 +10,11 @@
 Still è un'applicazione open source, **100% offline** (priva di permesso `INTERNET`) per Android e Wear OS, disponibile su **[Google Play Store](https://play.google.com/store/apps/details?id=com.sanluca.still)** e concepita per la meditazione (Mindfulness e Vipassana). A differenza di molti altri timer sul mercato, si concentra sul minimalismo assoluto, sull'affidabilità del conteggio a schermo spento o attivo e sull'integrazione nativa e trasparente con **Google Salute (Health Connect)**.
 
 ---
+
+## Novità della Versione 3.1.0
+- **Audio Focus & Gestione Disconnessione Cuffie (Smartphone)**: gestione automatica di Audio Focus e `ACTION_AUDIO_BECOMING_NOISY` (scollegamento cuffie Bluetooth o via cavo) sia sui sottofondi `Media3 ExoPlayer` sia sul bordone 136.1 Hz (`AudioTrack`), con arresto e rilascio pulito delle risorse. Eliminato il doppio ducking quando le campane suonano sopra un sottofondo attivo.
+- **Conformità Android 15–16 (`targetSdk 36`) & Accessibilità UI**: aggiornamento a `activity-compose 1.13.0` e `fragment-ktx 1.8.9`, sfondo atmosferico full-bleed edge-to-edge, ridimensionamento automatico `TextAutoSize.StepBased` su timer circolari e giorni del calendario, layout adattivi per caratteri grandi su telefono e orologio (`FlowRow` per il volume su quadranti 192×192 dp) e nota Health Connect localizzata IT/EN.
+- **Stabilità Foreground Service, Data Layer & Wear OS Tile**: `SupervisorJob()` e tipo esplicito `FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK` su `StillTimerService` (Android 14+), validazione difensiva dei dati in arrivo da Wear OS (`WearListenerService`), aggiornamento automatico del Wear OS Tile al cambio tema, nuova anteprima dedicata `tile_preview.png` e sincronizzazione più robusta tra Service e UI sull'orologio.
 
 ## Novità della Versione 3.0.0
 - **Sottofondi Sonori Reali in Loop (Media3 ExoPlayer), File Personali & Bordone 136.1 Hz (Smartphone)**:
@@ -76,14 +81,14 @@ Still adotta un approccio rigoroso e trasparente alla tutela dei dati personali:
 ---
 
 ## 🛠️ Scelte Tecniche e Architettura
-- **Versione**: `3.0.0`
+- **Versione**: `3.1.0`
 - **Architettura 100% Offline & Compatibilità Play Store**: nessun permesso `INTERNET` in `:app` e `:wear`; `android.hardware.screen.portrait` dichiarato con `required="false"` su `:app` per compatibilità su tablet, pieghevoli, Chromebook e dispositivi XR; backup selettivo su `:app` (`still_prefs.xml` incluso, `still_dnd_state.xml` escluso) e `allowBackup="false"` su `:wear`.
 - **Struttura Modulare**: codice separato per responsabilità su `:app` (`MainActivity`, `StillTimerService`, `AudioUtils`, `StillDialogs`, `StillPresetDialogs`, `StillReminderDialog`, `MeditationReminder`, `StillTimerComponents`, `StillPreferences`, `SessionHistoryStore`, `SessionPresetStore`, `DoNotDisturb`, `HealthConnectManager`, `HealthSync`, `WearListenerService`, `ZenWheelGraphic`, `HourglassGraphic`, `CandleGraphic`) e `:wear` (`MainActivity`, `StillTimerService`, `AudioUtils`, `WearTimerPage`, `WearSettingsPage`, `WearPreferences`, `PhoneSync`, `StillTileService`, `StillComplicationService`).
 - **UI Dichiarativa & Grafica Procedurale**: realizzata interamente con **Jetpack Compose Material 3** e `Canvas` nativo (con `RuntimeShader` AGSL opzionale su Android 13+ per la fiamma della candela e loop `withFrameNanos` limitati a ~40 fps che si arrestano automaticamente in pausa/stop).
 - **Health Connect Client**: utilizza le API ufficiali `androidx.health.connect.client.HealthConnectClient` con controlli difensivi sui permessi e coda offline.
 - **Servizi in Background e Affidabilità**:
   - Smartphone: `ForegroundService` (`mediaPlayback`) come *Single Source of Truth* via `StateFlow` + `PARTIAL_WAKE_LOCK` dinamico calibrato sulla durata e chiusura pulita post-dissolvenza.
-  - Orologio: `ForegroundService` (`specialUse`, proprietà `Meditation timer and background chime`) con campionamento HR resiliente al lifecycle UI, *Ongoing Activity* e risveglio della schermata di salvataggio a fine sessione.
+  - Orologio: `ForegroundService` (`specialUse|health`, proprietà `Meditation timer and background chime`, con tipo `health` attivato dinamicamente su Android 14+ solo se il permesso battito è concesso) con campionamento HR resiliente al lifecycle UI, *Ongoing Activity* e risveglio della schermata di salvataggio a fine sessione.
 - **Sintesi Sonora PCM a 16-bit & Media3 ExoPlayer**: generazione audio procedurale a 44.1 kHz (stereo su smartphone, mono adattato su Wear OS) con inviluppo anti-click (*raised-cosine*) tramite `AudioTrack` per tutti i 9 timbri e il Bordone 136.1 Hz, affiancata da **Jetpack Media3 ExoPlayer** su `:app` per la riproduzione in loop continuo dei file `.ogg` integrati e dei file locali `.mp3`/`.ogg` scelti dall'utente.
 - **Lingue Supportate**: Italiano e Inglese (sia su smartphone che su smartwatch).
 - **Requisiti di Sistema**:
@@ -125,6 +130,11 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 **Still** is a **100% offline** (zero `INTERNET` permission), open-source meditation timer for Android smartphones and Wear OS smartwatches (Mindfulness and Vipassana), available on **[Google Play Store](https://play.google.com/store/apps/details?id=com.sanluca.still)**. Unlike bloated commercial apps, Still focuses on absolute minimalism, rock-solid background timing, and native, privacy-first integration with **Google Health Connect**.
 
 ---
+
+## What's New in Version 3.1.0
+- **Audio Focus & Headphone Disconnect Handling (Smartphone)**: automatic Audio Focus and `ACTION_AUDIO_BECOMING_NOISY` (Bluetooth/wired headphone disconnect) handling across both `Media3 ExoPlayer` soundscapes and the 136.1 Hz `AudioTrack` drone, with clean stop and resource release. Eliminated double ducking when bells chime over an active ambient soundscape.
+- **Android 15–16 (`targetSdk 36`) Edge-to-Edge & Large-Font Accessibility**: updated to `activity-compose 1.13.0` and `fragment-ktx 1.8.9`, full-bleed atmospheric edge-to-edge layout, `TextAutoSize.StepBased` on circular timers and calendar days, adaptive layouts for large font sizes across phone and watch (`FlowRow` volume controls on 192×192 dp circular screens), and localized IT/EN Health Connect session notes.
+- **Foreground Service, Data Layer & Wear OS Tile Stability**: `SupervisorJob()` and explicit `FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK` on `StillTimerService` (Android 14+), defensive validation on incoming Wear OS sync payloads (`WearListenerService`), automatic Wear OS Tile refresh on theme changes, dedicated `tile_preview.png` preview asset, and hardened watch Service/UI state synchronization.
 
 ## What's New in Version 3.0.0
 - **Real Looping Ambient Soundscapes (Media3 ExoPlayer), Custom Audio Files & 136.1 Hz Drone (Smartphone)**:
@@ -185,13 +195,13 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 ---
 
 ## 🛠️ Technical Architecture & Requirements
-- **Version**: `3.0.0`
+- **Version**: `3.1.0`
 - **100% Offline & Play Store Compatibility**: no `INTERNET` permission in `:app` or `:wear`; `android.hardware.screen.portrait` declared with `required="false"` in `:app` for broad compatibility across tablets, foldables, Chromebooks, and XR devices; selective Auto Backup on `:app` (`still_prefs.xml` included, `still_dnd_state.xml` excluded) and `allowBackup="false"` on `:wear`.
 - **Modular Structure**: cleanly separated modules across `:app` (`MainActivity`, `StillTimerService`, `AudioUtils`, `StillDialogs`, `StillPresetDialogs`, `StillReminderDialog`, `MeditationReminder`, `StillTimerComponents`, `StillPreferences`, `SessionHistoryStore`, `SessionPresetStore`, `DoNotDisturb`, `HealthConnectManager`, `HealthSync`, `WearListenerService`, `ZenWheelGraphic`, `HourglassGraphic`, `CandleGraphic`) and `:wear` (`MainActivity`, `StillTimerService`, `AudioUtils`, `WearTimerPage`, `WearSettingsPage`, `WearPreferences`, `PhoneSync`, `StillTileService`, `StillComplicationService`).
 - **UI & Procedural Graphics**: Jetpack Compose Material 3 and native `Canvas` on both Phone and Watch (with optional AGSL `RuntimeShader` on Android 13+ for the candle flame and ~40 fps `withFrameNanos` loops that halt completely when paused or stopped).
 - **Reliable Background Services**:
   - Phone: `ForegroundService` (`mediaPlayback`) exposing a `StateFlow` Single Source of Truth + dynamic `PARTIAL_WAKE_LOCK` and deferred shutdown after ambient fade-out.
-  - Watch: `ForegroundService` (`specialUse`, `Meditation timer and background chime`) with UI-resilient HR sampling, *Ongoing Activity*, and completion wake-up.
+  - Watch: `ForegroundService` (`specialUse|health`, `Meditation timer and background chime`, with `health` enabled dynamically on Android 14+ only when heart-rate permission is granted) with UI-resilient HR sampling, *Ongoing Activity*, and completion wake-up.
 - **16-bit PCM Sound Synthesis & Media3 ExoPlayer**: real-time 44.1 kHz procedural audio generation (stereo on phone, mono-tuned on Wear OS) with raised-cosine anti-click envelopes via `AudioTrack` for all 9 bell timbres and the 136.1 Hz Drone, paired with **Jetpack Media3 ExoPlayer** on `:app` for gapless looping of built-in `.ogg` tracks and user-selected `.mp3`/`.ogg` files.
 - **Languages Supported**: English and Italian (both Phone and Watch).
 - **System Requirements**:
