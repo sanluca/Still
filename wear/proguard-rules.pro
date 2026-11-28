@@ -15,3 +15,4 @@
 # 4. Servizi Wear registrati nel Manifest
 -keep class com.sanluca.still.wear.StillTimerService { *; }
 -keep class com.sanluca.still.wear.StillTileService { *; }
+-keep class com.sanluca.still.wear.StillComplicationService { *; }

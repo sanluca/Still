@@ -1,4 +1,4 @@
-# Still - Minimal Zen Timer (v3.1.0)
+# Still - Minimal Zen Timer (v3.2.0)
 
 [🇮🇹 Versione Italiana](#-versione-italiana) | [🇬🇧 English Version](#-english-version) | [▶ Google Play Store](https://play.google.com/store/apps/details?id=com.sanluca.still)
 
@@ -10,6 +10,13 @@
 Still è un'applicazione open source, **100% offline** (priva di permesso `INTERNET`) per Android e Wear OS, disponibile su **[Google Play Store](https://play.google.com/store/apps/details?id=com.sanluca.still)** e concepita per la meditazione (Mindfulness e Vipassana). A differenza di molti altri timer sul mercato, si concentra sul minimalismo assoluto, sull'affidabilità del conteggio a schermo spento o attivo e sull'integrazione nativa e trasparente con **Google Salute (Health Connect)**.
 
 ---
+
+## Novità della Versione 3.2.0
+- **13 Campane Tibetane Reali (`.ogg` in `:core`) con Sovrapposizione Naturale (Smartphone & Wear OS)**: sostituiti i 9 timbri sintetizzati con **13 registrazioni reali di campane e ciotole tibetane** (da **Pixabay**, condivise nel modulo `:core` e riprodotte tramite `MediaPlayer` con risonanza sovrapposta naturale sui rintocchi multipli e curva quadratica del volume): *Ciotola tibetana*, *Campanella pura*, *Gong tibetano*, *Campana del tempio*, *Campana Zen acuta*, *Campana armonica*, *Ciotola calda*, *Ciotola in Mi♭*, *Gong del monaco*, *Tocco chiaro*, *Campana profonda*, *Ciotola grave* e *Ciotola naturale*.
+- **Frase Contemplativa all'Apertura (Smartphone)**: all'avvio a freddo (quando nessuna sessione è attiva o in pausa) compare un breve overlay in dissolvenza (*"Ricordati: tutto è impermanente."* / *"Remember: everything is impermanent."*), chiudibile immediatamente con un tocco in qualsiasi punto o con il tasto Indietro.
+- **Scheda Guida Offline (`?`) & Dialogo "Novità" (Smartphone)**: aggiunto nella barra superiore il pulsante **`?`** che apre una guida interamente offline in tre sezioni (*Come meditare*, *Cos'è Still*, *Privacy in breve*), insieme a un dialogo *Novità* mostrato una sola volta per versione in sequenza ordinata all'avvio senza sovrapposizioni.
+- **Selettore Battito `Off` / `On`, Fix `OngoingActivity` & Apertura Diretta dal Tile (Wear OS)**: nelle impostazioni dell'orologio è presente un selettore **Rileva battito (`Off` / `On`)** persistente (quando è `Off` il Service si avvia con il solo tipo `specialUse` senza registrare il sensore cardiaco né inviare BPM, e si riallinea automaticamente se il permesso viene revocato dalle impostazioni di sistema). Aggiornata `wear-ongoing` alla `1.1.0`, corretto l'aggiornamento dinamico di `OngoingActivity` al passaggio preparazione → meditazione attiva → tempo extra, e il tocco sulla **Scheda Rapida (Tile)** apre ora sempre la pagina principale del timer anziché l'ultima sottopagina visitata.
+- **Modulo Condiviso `:core`, Refactoring Modulare & 27 Unit Test**: introdotto il modulo libreria interno `:core` (`com.sanluca.still.core`) per condividere tra `:app` e `:wear` il motore campane (`BellAudioPlayer`), i 13 file `.ogg` e le relative traduzioni, l'aptica (`HapticUtils`) e le utility comuni (`StillCoreUtils`). File di grandi dimensioni suddivisi per responsabilità, state holder dedicati (`StillScreenStateHolder`, `WearScreenStateHolder`), controller centralizzato per l'anteprima audio (`AudioPreviewController`), wrapper `@Immutable` per stati/azioni UI, canale unico `StateFlow` su Wear OS (rimosso il `BroadcastReceiver` ridondante) e suite di **27 unit test JVM** (`:core`, `:app`, `:wear`).
 
 ## Novità della Versione 3.1.0
 - **Audio Focus & Gestione Disconnessione Cuffie (Smartphone)**: gestione automatica di Audio Focus e `ACTION_AUDIO_BECOMING_NOISY` (scollegamento cuffie Bluetooth o via cavo) sia sui sottofondi `Media3 ExoPlayer` sia sul bordone 136.1 Hz (`AudioTrack`), con arresto e rilascio pulito delle risorse. Eliminato il doppio ducking quando le campane suonano sopra un sottofondo attivo.
@@ -43,9 +50,9 @@ Still è un'applicazione open source, **100% offline** (priva di permesso `INTER
 - **4 Temi Stagionali OLED**: scegli nelle impostazioni tra **Primavera**, **Estate**, **Autunno** e **Inverno**, calibrati su sfondo nero OLED per ridurre l'affaticamento visivo e il consumo energetico.
 - **Regolazione del Tempo (Anche a Sessione Avviata)**: imposta la durata o seleziona **∞ (Infinito)** per una sessione senza limiti. Puoi usare i pulsanti `-5m`, `-1m`, `+1m` e `+5m` sia prima di partire sia **in tempo reale durante la meditazione** (o in pausa) per allungare o accorciare la sessione senza interromperla, con indicazione del tempo iniziale sotto il timer.
 - **Ritardo Iniziale (Preparazione)**: imposta un tempo di preparazione in secondi dalle impostazioni: Still gestisce il conto alla rovescia (*"Preparati"*) direttamente nel Foreground Service prima di far suonare il gong di inizio sessione.
-- **9 Campane Sintetizzate in Tempo Reale & Modalità Avviso**: il suono viene sintetizzato matematicamente in tempo reale in PCM a 16-bit (44.1 kHz stereo con spazializzazione e riverbero comb) tramite `AudioTrack` con inviluppo anti-click su 9 timbri selezionabili (**Gong** 216 Hz, **Quarzo** 432 Hz, **Keisu** 528 Hz, **Tingsha** 2640 Hz, **Carillon** 880 Hz, **Ciotola d'acqua** 392 Hz, **Ciotola morbida** 256 Hz, **Piuma** 660 Hz, **Gong morbido** 196 Hz), con regolazione del volume a step (`−`/`+`, 20%–100%, senza alterare il volume di sistema), modalità di avviso (*Entrambi*, *Campane*, *Vibrazione*) e vibrazione aptica morbida a singolo impulso modulato (1 rintocco all'inizio/intervallo, 3 alla fine).
+- **13 Campane Tibetane Reali & Modalità Avviso**: 13 registrazioni reali `.ogg` di campane e ciotole tibetane (da **Pixabay**, condivise nel modulo `:core`) riprodotte tramite `MediaPlayer` con sovrapposizione naturale dei rintocchi (**Ciotola tibetana**, **Campanella pura**, **Gong tibetano**, **Campana del tempio**, **Campana Zen acuta**, **Campana armonica**, **Ciotola calda**, **Ciotola in Mi♭**, **Gong del monaco**, **Tocco chiaro**, **Campana profonda**, **Ciotola grave**, **Ciotola naturale**), con regolazione del volume a step (`−`/`+`, 20%–100%, curva quadratica percettiva senza alterare il volume hardware di sistema), modalità di avviso (*Entrambi*, *Campane*, *Vibrazione*) e vibrazione aptica morbida a singolo impulso modulato (1 rintocco all'inizio/intervallo, 3 alla fine).
 - **Sottofondo Sonoro (Tracce Pixabay, Bordone 136.1 Hz & File Personale)**: scegli dalle impostazioni tra *Spento*, 6 ambienti reali `.ogg` in loop continuo (*Pioggia leggera*, *Pioggia dolce*, *Uccelli e pioggia*, *Onde*, *Fiume*, *Foresta* — da **Pixabay**), il *Bordone* sintetizzato a 136.1 Hz oppure un **file audio personale (`.mp3` / `.ogg`)** scelto dal telefono via *Storage Access Framework*. Il sottofondo entra con dissolvenza morbida dopo la preparazione, si attenua dolcemente durante i rintocchi delle campane e sfuma gradualmente in pausa o allo stop, con regolazione volume a step (`−`/`+`, 10%–100%).
-- **Campana Intermedia con Timbro Dedicato**: se attivata dalle impostazioni (es. ogni 5, 10 o 15 minuti), puoi scegliere tra tutti i 9 timbri il richiamo intermedio dedicato (predefinito su **Tingsha**), indipendente dal timbro di inizio/fine meditazione.
+- **Campana Intermedia con Timbro Dedicato**: se attivata dalle impostazioni (es. ogni 5, 10 o 15 minuti), puoi scegliere tra tutti i 13 timbri il richiamo intermedio dedicato (predefinito su **Campanella pura**), indipendente dal timbro di inizio/fine meditazione.
 - **Preset di Meditazione (`P`)**: gestisci i tuoi profili nelle **Impostazioni** (*Gestisci Preset*) con supporto a tutti i parametri dell'app (tutti opzionali con fallback sulle impostazioni globali e scorciatoia *Usa attuali* / *Tutto globale*) e selezionali dalla barra superiore con **`P`** (oppure **Nessuno** per i globali). L'avvio resta sempre manuale tramite *Inizia Meditazione* o toccando Candela, Clessidra, Ruota Zen o Essenziale.
 - **Non Disturbare Automatico (DND)**: se abilitato e autorizzato nelle impostazioni di sistema, Still attiva automaticamente la modalità Non Disturbare all'avvio della sessione e salva il filtro precedente in un file dedicato (`still_dnd_state`, escluso dal backup) per ripristinarlo in sicurezza in pausa, allo stop o al rientro dopo una chiusura forzata.
 - **Promemoria di Meditazione (Opzionali e Silenziosi)**: disabilitati di default e configurabili nelle **Impostazioni** con orario e frequenza (*Ogni giorno*, *Giorni scelti*, *Ogni 2 giorni*, *Ogni 3 giorni*). Utilizzano un canale Android nativo silenzioso di default (senza suono né vibrazione, personalizzabile dalle impostazioni di sistema di Android), si riprogrammano localmente dopo riavvii o cambi d'orario senza usare server esterni, saltano automaticamente l'avviso se hai già meditato nella giornata e aprono Still al tocco per scegliere liberamente come meditare.
@@ -57,13 +64,13 @@ Still è un'applicazione open source, **100% offline** (priva di permesso `INTER
 
 ### ⌚ App Orologio (Wear OS)
 - **Interfaccia Ottimizzata per Schermi Circolari**: navigazione fluida a pagine (`VerticalPager` e `HorizontalPager`) con anello di avanzamento, pulsanti `[-]` / `[+]`, supporto alla **corona rotante / ghiera**, protezione dal gesto Indietro durante la sessione e **persistenza dell'ultima durata selezionata** (inclusa modalità `∞`).
-- **9 Campane Sintetizzate & Feedback Aptico Morbido**: sintesi PCM a 16-bit ottimizzata per l'altoparlante mono dell'orologio per tutti e 9 i timbri (4 classici + 5 soft) con anteprima al tocco, rispetto del volume di sistema e rintocco aptico morbido a singolo impulso con rampa graduale (`triggerHapticGong`: 1 vibrazione soft all'inizio, 3 vibrazioni soft all'overtime, con fallback breve sui dispositivi senza controllo d'ampiezza).
-- **Impostazioni Complete da Polso**: scorrendo accedi a **Modalità avviso** (*Entrambi*, *Campane*, *Vibraz.*), **Volume campana** (20%–100%), selettore completo dei **9 timbri**, **Tema stagionale**, **Ritardo di preparazione** e pulsante discreto **Autorizza Battito** (visibile solo se il permesso sensore non è ancora stato concesso).
-- **Rilevazione Silenziosa del Battito Cardiaco (Opzionale)**: se autorizzato (`READ_HEART_RATE` su Android 16 / SDK 36+ o `BODY_SENSORS` sulle versioni precedenti), `StillTimerService` esegue un campionamento leggero e intermittente del sensore cardiaco durante la meditazione attiva, senza mai mostrare numeri sull'orologio. Alla chiusura della sessione, i valori sintetici (iniziale, finale, medio) vengono inviati allo storico locale del telefono tramite `Wearable Data Layer` (mai a Health Connect).
+- **13 Campane Tibetane Reali & Feedback Aptico Morbido**: riproduzione tramite `MediaPlayer` di tutte e 13 le campane reali `.ogg` dal modulo condiviso `:core` con anteprima al tocco, rispetto del volume di sistema e rintocco aptico morbido a singolo impulso con rampa graduale (`triggerHapticGong`: 1 vibrazione soft all'inizio, 3 vibrazioni soft all'overtime, con fallback breve sui dispositivi senza controllo d'ampiezza).
+- **Impostazioni Complete da Polso**: scorrendo accedi a **Modalità avviso** (*Entrambi*, *Campane*, *Vibraz.*), **Volume campana** (20%–100%), selettore **Rileva battito** (`Off` / `On`), selettore completo dei **13 timbri**, **Tema stagionale** e **Ritardo di preparazione**.
+- **Rilevazione Silenziosa del Battito Cardiaco (Opzionale)**: attivabile o disattivabile in qualsiasi momento dalle impostazioni dell'orologio. Quando è attiva e autorizzata (`READ_HEART_RATE` su Android 16 / SDK 36+ o `BODY_SENSORS` sulle versioni precedenti), `StillTimerService` esegue un campionamento leggero e intermittente del sensore cardiaco durante la meditazione attiva, senza mai mostrare numeri sull'orologio; quando è spenta il sensore non viene registrato e la sessione viene sincronizzata senza BPM. Alla chiusura della sessione, gli eventuali valori sintetici (iniziale, finale, medio) vengono inviati allo storico locale del telefono tramite `Wearable Data Layer` (mai a Health Connect).
 - **Modalità Ambient & Risparmio Energetico**:
   - L'Activity implementa `AmbientModeSupport` (Always-on a 1 Hz su sfondo nero puro `Color.Black` per preservare la batteria e prevenire il burn-in OLED).
   - `StillTimerService` utilizza `PARTIAL_WAKE_LOCK` dinamico, notifica con icona dedicata di Still e *Ongoing Activity* sul quadrante per rientrare subito nella sessione.
-- **Scheda Rapida (Tile) & Complicazione Quadrante**: include sia una **Scheda rapida Wear OS** (`StillTileService`) sia una **Complicazione per il quadrante** (`StillComplicationService`, tipi `SHORT_TEXT` e `MONOCHROMATIC_IMAGE`) per avviare Still con un tocco.
+- **Scheda Rapida (Tile) & Complicazione Quadrante**: include sia una **Scheda rapida Wear OS** (`StillTileService`, che apre sempre direttamente la pagina principale del timer) sia una **Complicazione per il quadrante** (`StillComplicationService`, tipi `SHORT_TEXT` e `MONOCHROMATIC_IMAGE`) per avviare Still con un tocco.
 
 ---
 
@@ -81,15 +88,22 @@ Still adotta un approccio rigoroso e trasparente alla tutela dei dati personali:
 ---
 
 ## 🛠️ Scelte Tecniche e Architettura
-- **Versione**: `3.1.0`
-- **Architettura 100% Offline & Compatibilità Play Store**: nessun permesso `INTERNET` in `:app` e `:wear`; `android.hardware.screen.portrait` dichiarato con `required="false"` su `:app` per compatibilità su tablet, pieghevoli, Chromebook e dispositivi XR; backup selettivo su `:app` (`still_prefs.xml` incluso, `still_dnd_state.xml` escluso) e `allowBackup="false"` su `:wear`.
-- **Struttura Modulare**: codice separato per responsabilità su `:app` (`MainActivity`, `StillTimerService`, `AudioUtils`, `StillDialogs`, `StillPresetDialogs`, `StillReminderDialog`, `MeditationReminder`, `StillTimerComponents`, `StillPreferences`, `SessionHistoryStore`, `SessionPresetStore`, `DoNotDisturb`, `HealthConnectManager`, `HealthSync`, `WearListenerService`, `ZenWheelGraphic`, `HourglassGraphic`, `CandleGraphic`) e `:wear` (`MainActivity`, `StillTimerService`, `AudioUtils`, `WearTimerPage`, `WearSettingsPage`, `WearPreferences`, `PhoneSync`, `StillTileService`, `StillComplicationService`).
-- **UI Dichiarativa & Grafica Procedurale**: realizzata interamente con **Jetpack Compose Material 3** e `Canvas` nativo (con `RuntimeShader` AGSL opzionale su Android 13+ per la fiamma della candela e loop `withFrameNanos` limitati a ~40 fps che si arrestano automaticamente in pausa/stop).
+- **Versione**: `3.2.0`
+- **Architettura 100% Offline & Compatibilità Play Store**: nessun permesso `INTERNET` in `:core`, `:app` e `:wear`; `android.hardware.screen.portrait` dichiarato con `required="false"` su `:app` per compatibilità su tablet, pieghevoli, Chromebook e dispositivi XR; backup selettivo su `:app` (`still_prefs.xml` incluso, `still_dnd_state.xml` escluso) e `allowBackup="false"` su `:wear`.
+- **Struttura Modulare (`:core`, `:app`, `:wear`)**:
+  - **`:core`** (`com.sanluca.still.core`, `minSdk 26`): libreria condivisa tra telefono e orologio con `BellAudioPlayer` (catalogo 13 campane `.ogg`, `MediaPlayer` con sovrapposizione e risorse localizzate IT/EN), `HapticUtils` (`triggerHapticGong`, `cancelGongVibration`) e `StillCoreUtils` (`formatTime`, costanti `ALERT_MODE_*`).
+  - **`:app`**: `MainActivity`, `StillScreenStateHolder`, `StillTimerService`, `AmbientSoundPlayer`, `AudioPreviewController`, `StillTopBar`, `StillTimerCenterStage`, `StillBottomControls`, `StillBellDropdown`, `StillSettingsDialog`, `StillStatsDialog`, `StillInfoDialogs`, `StillPresetListDialogs`, `StillPresetEditorDialog`, `StillReminderDialog`, `MeditationReminder`, `StillPreferences`, `SessionHistoryStore`, `SessionPresetStore`, `DoNotDisturb`, `HealthConnectManager`, `HealthSync`, `WearListenerService`, `ZenWheelGraphic`, `HourglassGraphic`, `CandleGraphic`.
+  - **`:wear`**: `MainActivity`, `WearScreenStateHolder`, `StillTimerService`, `WearHeartRateTracker`, `WearOngoingActivityHelper`, `WearTimerPage`, `WearSettingsPage`, `WearSettingsComponents`, `WearPreferences`, `PhoneSync`, `StillTileService`, `StillComplicationService`.
+- **UI Dichiarativa, Stato `@Immutable` & Grafica Procedurale**: realizzata interamente con **Jetpack Compose Material 3**, data class `@Immutable` per stati/azioni UI e `Canvas` nativo (con `RuntimeShader` AGSL opzionale su Android 13+ per la fiamma della candela e loop `withFrameNanos` limitati a ~40 fps che si arrestano automaticamente in pausa/stop).
+- **Test Unitari**: suite di **27 unit test JVM** distribuiti sui tre moduli (`:core`, `:app`, `:wear`) a copertura di catalogo campane, formattazione tempi, storico/CSV, preset, promemoria, preferenze, calcolo BPM e logica di sincronizzazione.
 - **Health Connect Client**: utilizza le API ufficiali `androidx.health.connect.client.HealthConnectClient` con controlli difensivi sui permessi e coda offline.
 - **Servizi in Background e Affidabilità**:
   - Smartphone: `ForegroundService` (`mediaPlayback`) come *Single Source of Truth* via `StateFlow` + `PARTIAL_WAKE_LOCK` dinamico calibrato sulla durata e chiusura pulita post-dissolvenza.
-  - Orologio: `ForegroundService` (`specialUse|health`, proprietà `Meditation timer and background chime`, con tipo `health` attivato dinamicamente su Android 14+ solo se il permesso battito è concesso) con campionamento HR resiliente al lifecycle UI, *Ongoing Activity* e risveglio della schermata di salvataggio a fine sessione.
-- **Sintesi Sonora PCM a 16-bit & Media3 ExoPlayer**: generazione audio procedurale a 44.1 kHz (stereo su smartphone, mono adattato su Wear OS) con inviluppo anti-click (*raised-cosine*) tramite `AudioTrack` per tutti i 9 timbri e il Bordone 136.1 Hz, affiancata da **Jetpack Media3 ExoPlayer** su `:app` per la riproduzione in loop continuo dei file `.ogg` integrati e dei file locali `.mp3`/`.ogg` scelti dall'utente.
+  - Orologio: `ForegroundService` (`specialUse|health`, proprietà `Meditation timer and background chime`, con tipo `health` attivato dinamicamente su Android 14+ solo se il rilevamento battito è attivo nelle impostazioni e il permesso è concesso) esposto alla UI tramite singolo canale `StateFlow` con buffering in Ambient Mode, campionamento HR delegato a `WearHeartRateTracker`, *Ongoing Activity* (`wear-ongoing:1.1.0`) gestita da `WearOngoingActivityHelper` ad ogni cambio fase e risveglio della schermata di salvataggio a fine sessione.
+- **Motore Audio (`MediaPlayer`, `Media3 ExoPlayer` & `AudioTrack` PCM)**:
+  - **13 campane tibetane `.ogg`** in `:core` riprodotte tramite `MediaPlayer` con sovrapposizione naturale dei rintocchi multipli e curva quadratica del volume.
+  - **6 sottofondi ambientali `.ogg` e file locali `.mp3`/`.ogg`** su `:app` riprodotti in loop continuo tramite **Jetpack Media3 ExoPlayer**.
+  - **Bordone 136.1 Hz (Om)** su `:app` sintetizzato proceduralmente in streaming PCM 16-bit stereo a 44.1 kHz tramite `AudioTrack` con inviluppo anti-click (*raised-cosine*).
 - **Lingue Supportate**: Italiano e Inglese (sia su smartphone che su smartwatch).
 - **Requisiti di Sistema**:
   - **Smartphone**: Android 8.0+ (`minSdk 26`).
@@ -99,13 +113,30 @@ Still adotta un approccio rigoroso e trasparente alla tutela dei dati personali:
 
 ## 🎵 Crediti Audio (Pixabay)
 
-I 6 file audio ambientali `.ogg` integrati in `app/src/main/res/raw/` provengono da **[Pixabay](https://pixabay.com/)** e sono distribuiti secondo la **Pixabay Content License** (separata dalla licenza GPLv3 del codice sorgente):
+Tutti i file audio `.ogg` integrati nell'app provengono da **[Pixabay](https://pixabay.com/)** e sono distribuiti secondo la **Pixabay Content License** (separata dalla licenza GPLv3 del codice sorgente).
+
+**6 sottofondi ambientali** (`app/src/main/res/raw/`):
 - `liecio_light_rain_109591.ogg` — *Light Rain* (liecio, Pixabay)
 - `eryliaa_gentle_rain_for_relaxation_and_sleep_337279.ogg` — *Gentle Rain for Relaxation and Sleep* (eryliaa, Pixabay)
 - `nikvideomaker_uccelli_e_la_pioggia_252092.ogg` — *Uccelli e la pioggia* (nikvideomaker, Pixabay)
 - `places_atmosphere_nature_onde_del_mare_sulla_spiaggia_379986.ogg` — *Onde del mare sulla spiaggia* (places_atmosphere_nature, Pixabay)
 - `nils_vega_river_sounds_547976.ogg` — *River Sounds* (nils_vega, Pixabay)
 - `soundreality_nature_forest_sound_537925.ogg` — *Nature Forest Sound* (soundreality, Pixabay)
+
+**13 campane e ciotole tibetane** (`core/src/main/res/raw/`):
+- `campane_tibetane_freesound_community_singing_bowl_81915.ogg` — *Singing Bowl* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_singing_bell_hit_1_105400.ogg` — *Singing Bell Hit 1* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_singing_bowl_gong_69238.ogg` — *Singing Bowl Gong* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_temple_chiming_bowl_singing_bowl_72080.ogg` — *Temple Chiming Bowl* (freesound_community, Pixabay)
+- `campane_tibetane_alex_jauk_zen_tone_high_202554.ogg` — *Zen Tone High* (alex_jauk, Pixabay)
+- `campane_tibetane_creative_spark_singing_bowl_248904.ogg` — *Singing Bowl* (creative_spark, Pixabay)
+- `campane_tibetane_freesound_community_singing_bowl_hit_3_33366.ogg` — *Singing Bowl Hit 3* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_e_flat_tibetan_singing_bowl_struck_38746.ogg` — *E-Flat Tibetan Singing Bowl* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_043238_gong_bell_monkay39s_singing_bowl_modified_61150.ogg` — *Gong Bell Monk's Singing Bowl* (freesound_community, Pixabay)
+- `campane_tibetane_chisper_singing_bowl_strike_638373.ogg` — *Singing Bowl Strike* (chisper, Pixabay)
+- `campane_tibetane_freesound_community_singing_bowl_strike_sound_84682.ogg` — *Singing Bowl Strike Sound* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_singing_bowl_male_frequency_29714.ogg` — *Singing Bowl Male Frequency* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_singing_bowl_23042017_01_raw_71015.ogg` — *Singing Bowl Raw* (freesound_community, Pixabay)
 
 ---
 
@@ -130,6 +161,13 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 **Still** is a **100% offline** (zero `INTERNET` permission), open-source meditation timer for Android smartphones and Wear OS smartwatches (Mindfulness and Vipassana), available on **[Google Play Store](https://play.google.com/store/apps/details?id=com.sanluca.still)**. Unlike bloated commercial apps, Still focuses on absolute minimalism, rock-solid background timing, and native, privacy-first integration with **Google Health Connect**.
 
 ---
+
+## What's New in Version 3.2.0
+- **13 Real Tibetan Bell Recordings (`.ogg` in `:core`) with Natural Overlap (Phone & Wear OS)**: replaced the 9 synthesized timbres with **13 real Tibetan singing bowl and bell recordings** (sourced from **Pixabay**, shared in the `:core` module, and played via `MediaPlayer` with natural overlapping decay on multi-strike chimes and a perceptual quadratic volume curve): *Tibetan Bowl*, *Pure Bell*, *Tibetan Gong*, *Temple Bowl*, *High Zen Bell*, *Harmonic Bowl*, *Warm Bowl*, *E-Flat Bowl*, *Monk's Gong*, *Bright Strike*, *Deep Bowl*, *Low Bowl*, and *Natural Bowl*.
+- **Contemplative Launch Quote Overlay (Smartphone)**: on cold launch (when no session is running or paused), a brief fade-in/fade-out quote appears (*"Remember: everything is impermanent."*), dismissible immediately by tapping anywhere or pressing Back.
+- **Offline Guide (`?`) & One-Time "What's New" Dialog (Smartphone)**: added a **`?`** button in the top bar opening a fully offline three-section guide (*How to meditate*, *What is Still*, *Privacy at a glance*), alongside a versioned *What's New* dialog shown once per release in coordinated startup order without overlapping other prompts.
+- **Heart Rate `Off` / `On` Toggle, `OngoingActivity` Fix & Direct Tile Launch (Wear OS)**: watch settings provide a persistent **Heart rate (`Off` / `On`)** toggle (when `Off`, `StillTimerService` starts with `specialUse` only, never registers the heart rate sensor, and syncs sessions without BPM; automatically resets to `Off` if system permission is revoked externally). Upgraded `wear-ongoing` to `1.1.0`, fixed dynamic `OngoingActivity` updates across preparation → active meditation → overtime transitions, and tapping the **Wear OS Tile** now always opens the main timer screen instead of resuming the last visited settings subpage.
+- **Shared `:core` Module, Modular Refactoring & 27 Unit Tests**: introduced the internal `:core` library module (`com.sanluca.still.core`) to share the bell engine (`BellAudioPlayer`), all 13 `.ogg` bell recordings and localized strings, haptic alerts (`HapticUtils`), and common utilities (`StillCoreUtils`) across `:app` and `:wear`. Split large files by responsibility, extracted dedicated state holders (`StillScreenStateHolder`, `WearScreenStateHolder`) and a centralized `AudioPreviewController`, grouped UI parameters into `@Immutable` state/action models, consolidated Wear OS timer updates onto a single `StateFlow` channel (removing the redundant `BroadcastReceiver`), and added **27 JVM unit tests** across `:core`, `:app`, and `:wear`.
 
 ## What's New in Version 3.1.0
 - **Audio Focus & Headphone Disconnect Handling (Smartphone)**: automatic Audio Focus and `ACTION_AUDIO_BECOMING_NOISY` (Bluetooth/wired headphone disconnect) handling across both `Media3 ExoPlayer` soundscapes and the 136.1 Hz `AudioTrack` drone, with clean stop and resource release. Eliminated double ducking when bells chime over an active ambient soundscape.
@@ -163,9 +201,9 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 - **4 Seasonal OLED Themes**: choose between **Spring**, **Summer**, **Autumn**, and **Winter**, calibrated on pure OLED dark backgrounds to minimize eye strain and battery usage.
 - **Live Duration Controls**: select **∞ (Unlimited)** for an open-ended session or adjust the timer using `-5m`, `-1m`, `+1m`, and `+5m` buttons both before starting and **live while meditating** (or paused), with the initial planned time displayed underneath the main digits.
 - **Preparation Delay**: configure a custom preparation countdown in seconds handled directly inside the Foreground Service before the opening chime sounds.
-- **9 Real-Time Procedural Bell Timbres & Alert Modes**: chimes are mathematically synthesized in real time in 16-bit PCM (44.1 kHz stereo with spatialization and comb reverb) via `AudioTrack` with anti-click envelopes across 9 selectable timbres (**Gong** 216 Hz, **Crystal** 432 Hz, **Keisu** 528 Hz, **Tingsha** 2640 Hz, **Chime** 880 Hz, **Water Bowl** 392 Hz, **Soft Bowl** 256 Hz, **Feather** 660 Hz, **Soft Gong** 196 Hz), with stepped volume control (`−`/`+`, 20%–100%, never modifying system volume), selectable alert mode (*Both*, *Bell*, *Vibrate*), and a gentle single ramped haptic pulse (1 soft pulse at start/interval, 3 soft pulses at completion).
+- **13 Real Tibetan Bells & Alert Modes**: 13 real `.ogg` Tibetan bowl and bell recordings (from **Pixabay**, shared via `:core`) played via `MediaPlayer` with natural overlapping chimes (**Tibetan Bowl**, **Pure Bell**, **Tibetan Gong**, **Temple Bowl**, **High Zen Bell**, **Harmonic Bowl**, **Warm Bowl**, **E-Flat Bowl**, **Monk's Gong**, **Bright Strike**, **Deep Bowl**, **Low Bowl**, **Natural Bowl**), with stepped volume control (`−`/`+`, 20%–100%, perceptual quadratic curve without modifying hardware system volume), selectable alert mode (*Both*, *Bell*, *Vibrate*), and a gentle single ramped haptic pulse (1 soft pulse at start/interval, 3 soft pulses at completion).
 - **Ambient Soundscapes (Pixabay Tracks, 136.1 Hz Drone & Custom File)**: choose in settings between *Off*, 6 real gapless `.ogg` environments (*Light Rain*, *Gentle Rain*, *Birds & Rain*, *Ocean*, *River*, *Forest* — from **Pixabay**), the synthesized 136.1 Hz *Drone*, or a **local audio file (`.mp3` / `.ogg`)** picked via Android's *Storage Access Framework*. Ambient audio fades in smoothly after preparation, ducks gently during bell chimes, and fades out gracefully on pause or stop, with stepped volume controls (`−`/`+`, 10%–100%).
-- **Intermediate Bell with Dedicated Timbre**: when an interval in minutes (> 0) is active, pick any of the 9 timbres specifically for intermediate interval chimes (defaulting to **Tingsha**) independently of the main start/end bell.
+- **Intermediate Bell with Dedicated Timbre**: when an interval in minutes (> 0) is active, pick any of the 13 bells specifically for intermediate interval chimes (defaulting to **Pure Bell**) independently of the main start/end bell.
 - **Meditation Presets (`P`)**: manage named setups in **Settings** (*Manage Presets*) supporting every app parameter (each optional with fallback to global settings, plus *Use current* / *All global* shortcuts) and recall them from the top bar **`P`** button (or pick **None** to use global settings). Starting the session always remains manual via *Start Meditation* or by tapping Candle, Hourglass, Zen Wheel, or Essential.
 - **Automatic Do Not Disturb (DND)**: when enabled and authorized in system settings, Still activates Do Not Disturb on start and stores the previous filter in a dedicated backup-excluded preference file (`still_dnd_state`) to safely restore it on pause, stop, or recovery after a forced process kill.
 - **Meditation Reminders (Optional & Silent)**: disabled by default and configurable in **Settings** with custom time and frequency (*Every day*, *Selected days*, *Every 2 days*, *Every 3 days*). Delivered through a native Android notification channel that is silent by default (no sound or vibration, customizable in Android system settings), rescheduled locally across reboots or time changes without external servers, automatically skipped if you have already meditated today, and tapping opens Still so you can freely choose how to meditate.
@@ -177,11 +215,11 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 
 ### ⌚ Smartwatch App (Wear OS)
 - **Circular Display UI**: smooth page navigation (`VerticalPager` & `HorizontalPager`) with circular progress ring, `[-]` / `[+]` duration buttons, **rotary crown / bezel** support, Back protection while active, and **persisted last selected duration** (including `∞`).
-- **9 Synthesized Bell Timbres & Soft Haptic Chimes**: mono-tuned 16-bit PCM synthesis for all 9 timbres (4 classic + 5 soft) with tap preview, respect for system volume, and gentle single ramped wrist vibration (`triggerHapticGong`: 1 soft pulse at start, 3 soft pulses at completion, with short single-pulse fallback on devices without amplitude control).
-- **Full On-Wrist Settings**: swipe to configure **Alert mode** (*Both*, *Bell*, *Vibrate*), **Bell volume** (20%–100%), all **9 bell timbres**, **Seasonal theme**, **Preparation delay**, and a discreet **Authorize Heart Rate** button (shown only while sensor permission is not yet granted).
-- **Silent Heart Rate Sampling (Optional)**: when granted (`READ_HEART_RATE` on Android 16 / SDK 36+ or `BODY_SENSORS` on earlier versions), `StillTimerService` performs intermittent background heart-rate sampling during active meditation without ever displaying numbers on the watch. Upon completion, summary BPM values (start, end, average) are sent to the phone's local history via `Wearable Data Layer` (never written to Health Connect).
+- **13 Real Tibetan Bells & Soft Haptic Chimes**: `MediaPlayer` playback of all 13 real `.ogg` bells from the shared `:core` module with tap preview, respect for system volume, and gentle single ramped wrist vibration (`triggerHapticGong`: 1 soft pulse at start, 3 soft pulses at completion, with short single-pulse fallback on devices without amplitude control).
+- **Full On-Wrist Settings**: swipe to configure **Alert mode** (*Both*, *Bell*, *Vibrate*), **Bell volume** (20%–100%), **Heart rate** toggle (`Off` / `On`), all **13 bell sounds**, **Seasonal theme**, and **Preparation delay**.
+- **Silent Heart Rate Sampling (Optional)**: can be toggled on or off anytime directly in watch settings. When enabled and granted (`READ_HEART_RATE` on Android 16 / SDK 36+ or `BODY_SENSORS` on earlier versions), `StillTimerService` performs intermittent background heart-rate sampling during active meditation without ever displaying numbers on the watch; when turned off, the sensor is never registered and sessions sync without BPM. Upon completion, any summary BPM values (start, end, average) are sent to the phone's local history via `Wearable Data Layer` (never written to Health Connect).
 - **Ambient Mode & Battery Efficiency**: supports `AmbientModeSupport` (pure black OLED background in Always-On mode), dynamic `PARTIAL_WAKE_LOCK`, dedicated Still notification icon, and *Ongoing Activity* return chip.
-- **Quick Launch Tile & Watch Face Complication**: ships with both a Wear OS **Tile** (`StillTileService`) and a **Watch Face Complication** (`StillComplicationService`, supporting `SHORT_TEXT` and `MONOCHROMATIC_IMAGE`) for one-tap launch.
+- **Quick Launch Tile & Watch Face Complication**: ships with both a Wear OS **Tile** (`StillTileService`, which always opens directly to the main timer page) and a **Watch Face Complication** (`StillComplicationService`, supporting `SHORT_TEXT` and `MONOCHROMATIC_IMAGE`) for one-tap launch.
 
 ---
 
@@ -195,14 +233,21 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 ---
 
 ## 🛠️ Technical Architecture & Requirements
-- **Version**: `3.1.0`
-- **100% Offline & Play Store Compatibility**: no `INTERNET` permission in `:app` or `:wear`; `android.hardware.screen.portrait` declared with `required="false"` in `:app` for broad compatibility across tablets, foldables, Chromebooks, and XR devices; selective Auto Backup on `:app` (`still_prefs.xml` included, `still_dnd_state.xml` excluded) and `allowBackup="false"` on `:wear`.
-- **Modular Structure**: cleanly separated modules across `:app` (`MainActivity`, `StillTimerService`, `AudioUtils`, `StillDialogs`, `StillPresetDialogs`, `StillReminderDialog`, `MeditationReminder`, `StillTimerComponents`, `StillPreferences`, `SessionHistoryStore`, `SessionPresetStore`, `DoNotDisturb`, `HealthConnectManager`, `HealthSync`, `WearListenerService`, `ZenWheelGraphic`, `HourglassGraphic`, `CandleGraphic`) and `:wear` (`MainActivity`, `StillTimerService`, `AudioUtils`, `WearTimerPage`, `WearSettingsPage`, `WearPreferences`, `PhoneSync`, `StillTileService`, `StillComplicationService`).
-- **UI & Procedural Graphics**: Jetpack Compose Material 3 and native `Canvas` on both Phone and Watch (with optional AGSL `RuntimeShader` on Android 13+ for the candle flame and ~40 fps `withFrameNanos` loops that halt completely when paused or stopped).
+- **Version**: `3.2.0`
+- **100% Offline & Play Store Compatibility**: no `INTERNET` permission in `:core`, `:app`, or `:wear`; `android.hardware.screen.portrait` declared with `required="false"` in `:app` for broad compatibility across tablets, foldables, Chromebooks, and XR devices; selective Auto Backup on `:app` (`still_prefs.xml` included, `still_dnd_state.xml` excluded) and `allowBackup="false"` on `:wear`.
+- **Modular Structure (`:core`, `:app`, `:wear`)**:
+  - **`:core`** (`com.sanluca.still.core`, `minSdk 26`): shared Android library containing `BellAudioPlayer` (13 `.ogg` bells, `MediaPlayer` overlapping chime playback, EN/IT bell names), `HapticUtils` (`triggerHapticGong`, `cancelGongVibration`), and `StillCoreUtils` (`formatTime`, `ALERT_MODE_*`).
+  - **`:app`**: `MainActivity`, `StillScreenStateHolder`, `StillTimerService`, `AmbientSoundPlayer`, `AudioPreviewController`, `StillTopBar`, `StillTimerCenterStage`, `StillBottomControls`, `StillBellDropdown`, `StillSettingsDialog`, `StillStatsDialog`, `StillInfoDialogs`, `StillPresetListDialogs`, `StillPresetEditorDialog`, `StillReminderDialog`, `MeditationReminder`, `StillPreferences`, `SessionHistoryStore`, `SessionPresetStore`, `DoNotDisturb`, `HealthConnectManager`, `HealthSync`, `WearListenerService`, `ZenWheelGraphic`, `HourglassGraphic`, `CandleGraphic`.
+  - **`:wear`**: `MainActivity`, `WearScreenStateHolder`, `StillTimerService`, `WearHeartRateTracker`, `WearOngoingActivityHelper`, `WearTimerPage`, `WearSettingsPage`, `WearSettingsComponents`, `WearPreferences`, `PhoneSync`, `StillTileService`, `StillComplicationService`.
+- **UI, `@Immutable` State & Procedural Graphics**: Jetpack Compose Material 3, `@Immutable` UI state/action models, and native `Canvas` on both Phone and Watch (with optional AGSL `RuntimeShader` on Android 13+ for the candle flame and ~40 fps `withFrameNanos` loops that halt completely when paused or stopped).
+- **Unit Tests**: **27 JVM unit tests** across `:core`, `:app`, and `:wear` covering bell catalog mapping, time formatting, history/CSV import-export, presets, reminders, preferences, heart-rate summary stats, and sync logic.
 - **Reliable Background Services**:
   - Phone: `ForegroundService` (`mediaPlayback`) exposing a `StateFlow` Single Source of Truth + dynamic `PARTIAL_WAKE_LOCK` and deferred shutdown after ambient fade-out.
-  - Watch: `ForegroundService` (`specialUse|health`, `Meditation timer and background chime`, with `health` enabled dynamically on Android 14+ only when heart-rate permission is granted) with UI-resilient HR sampling, *Ongoing Activity*, and completion wake-up.
-- **16-bit PCM Sound Synthesis & Media3 ExoPlayer**: real-time 44.1 kHz procedural audio generation (stereo on phone, mono-tuned on Wear OS) with raised-cosine anti-click envelopes via `AudioTrack` for all 9 bell timbres and the 136.1 Hz Drone, paired with **Jetpack Media3 ExoPlayer** on `:app` for gapless looping of built-in `.ogg` tracks and user-selected `.mp3`/`.ogg` files.
+  - Watch: `ForegroundService` (`specialUse|health`, `Meditation timer and background chime`, with `health` enabled dynamically on Android 14+ only when heart-rate tracking is toggled on in settings and permission is granted) streamed to the UI over a single `StateFlow` channel with Ambient Mode buffering, heart-rate sampling delegated to `WearHeartRateTracker`, dynamically updated *Ongoing Activity* (`wear-ongoing:1.1.0`) via `WearOngoingActivityHelper`, and completion wake-up.
+- **Audio Engine (`MediaPlayer`, `Media3 ExoPlayer` & 16-bit PCM `AudioTrack`)**:
+  - **13 real Tibetan bell `.ogg` recordings** in `:core` played via `MediaPlayer` with natural overlapping multi-strike decay and a perceptual quadratic volume curve.
+  - **6 built-in `.ogg` ambient tracks and user `.mp3`/`.ogg` files** on `:app` played in gapless continuous loops via **Jetpack Media3 ExoPlayer**.
+  - **136.1 Hz Om Drone** on `:app` synthesized procedurally in 44.1 kHz 16-bit stereo PCM streaming via `AudioTrack` with raised-cosine anti-click envelopes.
 - **Languages Supported**: English and Italian (both Phone and Watch).
 - **System Requirements**:
   - **Smartphone**: Android 8.0+ (`minSdk 26`).
@@ -212,13 +257,30 @@ Sei libero di usare, studiare, condividere e modificare il codice a condizione d
 
 ## 🎵 Audio Credits (Pixabay)
 
-The 6 built-in `.ogg` ambient audio files in `app/src/main/res/raw/` are sourced from **[Pixabay](https://pixabay.com/)** and licensed under the **Pixabay Content License** (separate from the GPLv3 source code license):
+All built-in `.ogg` audio files are sourced from **[Pixabay](https://pixabay.com/)** and licensed under the **Pixabay Content License** (separate from the GPLv3 source code license).
+
+**6 ambient soundscapes** (`app/src/main/res/raw/`):
 - `liecio_light_rain_109591.ogg` — *Light Rain* (liecio, Pixabay)
 - `eryliaa_gentle_rain_for_relaxation_and_sleep_337279.ogg` — *Gentle Rain for Relaxation and Sleep* (eryliaa, Pixabay)
 - `nikvideomaker_uccelli_e_la_pioggia_252092.ogg` — *Uccelli e la pioggia* (nikvideomaker, Pixabay)
 - `places_atmosphere_nature_onde_del_mare_sulla_spiaggia_379986.ogg` — *Onde del mare sulla spiaggia* (places_atmosphere_nature, Pixabay)
 - `nils_vega_river_sounds_547976.ogg` — *River Sounds* (nils_vega, Pixabay)
 - `soundreality_nature_forest_sound_537925.ogg` — *Nature Forest Sound* (soundreality, Pixabay)
+
+**13 Tibetan singing bowls & bells** (`core/src/main/res/raw/`):
+- `campane_tibetane_freesound_community_singing_bowl_81915.ogg` — *Singing Bowl* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_singing_bell_hit_1_105400.ogg` — *Singing Bell Hit 1* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_singing_bowl_gong_69238.ogg` — *Singing Bowl Gong* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_temple_chiming_bowl_singing_bowl_72080.ogg` — *Temple Chiming Bowl* (freesound_community, Pixabay)
+- `campane_tibetane_alex_jauk_zen_tone_high_202554.ogg` — *Zen Tone High* (alex_jauk, Pixabay)
+- `campane_tibetane_creative_spark_singing_bowl_248904.ogg` — *Singing Bowl* (creative_spark, Pixabay)
+- `campane_tibetane_freesound_community_singing_bowl_hit_3_33366.ogg` — *Singing Bowl Hit 3* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_e_flat_tibetan_singing_bowl_struck_38746.ogg` — *E-Flat Tibetan Singing Bowl* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_043238_gong_bell_monkay39s_singing_bowl_modified_61150.ogg` — *Gong Bell Monk's Singing Bowl* (freesound_community, Pixabay)
+- `campane_tibetane_chisper_singing_bowl_strike_638373.ogg` — *Singing Bowl Strike* (chisper, Pixabay)
+- `campane_tibetane_freesound_community_singing_bowl_strike_sound_84682.ogg` — *Singing Bowl Strike Sound* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_singing_bowl_male_frequency_29714.ogg` — *Singing Bowl Male Frequency* (freesound_community, Pixabay)
+- `campane_tibetane_freesound_community_singing_bowl_23042017_01_raw_71015.ogg` — *Singing Bowl Raw* (freesound_community, Pixabay)
 
 ---
 

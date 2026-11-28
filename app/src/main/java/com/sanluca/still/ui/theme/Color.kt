@@ -4,7 +4,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 import com.sanluca.still.R
 
-enum class StillColorPalette(val id: String, val labelRes: Int, val swatchColor: Color) {
+internal enum class StillColorPalette(val id: String, val labelRes: Int, val swatchColor: Color) {
     SPRING("spring", R.string.theme_spring, Color(0xFFF596AA)),
     SUMMER("summer", R.string.theme_summer, Color(0xFFE85D75)),
     AUTUMN("autumn", R.string.theme_autumn, Color(0xFF6A994E)),
@@ -24,7 +24,7 @@ enum class StillColorPalette(val id: String, val labelRes: Int, val swatchColor:
  * Palette policromatica biofilica e Kasane no Irome per le 4 Stagioni:
  * Separa nettamente i colori di Scritte/Titolo, Numeri Timer, Pulsanti Step, Vetro, Legno e Sabbia.
  */
-data class StillExtendedColors(
+internal data class StillExtendedColors(
     val titleColor: Color,
     val timerDigitsColor: Color,
     val overtime: Color,
@@ -42,7 +42,7 @@ data class StillExtendedColors(
 // 1. PRIMAVERA — Kasane "Sakura", "Yamabuki" & "Yanagi"
 // (Rosa Petalo di Ciliegio, Verde Germoglio Vivo, Giallo Polline, Rugiada & Bambù)
 // ============================================================================
-val SpringColorScheme = darkColorScheme(
+internal val SpringColorScheme = darkColorScheme(
     primary = Color(0xFF64A348),            // Pulsante Inizia: Verde Germoglio Moegi Vivo
     onPrimary = Color(0xFF071F03),
     primaryContainer = Color(0xFF1E3F24),
@@ -65,7 +65,7 @@ val SpringColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF345E4E)
 )
 
-val SpringExtendedColors = StillExtendedColors(
+internal val SpringExtendedColors = StillExtendedColors(
     titleColor = Color(0xFFF596AA),         // Titolo "Still" e icone: Rosa Petalo Sakura
     timerDigitsColor = Color(0xFFFFF8FA),   // Numeri Timer: Bianco Petalo di Magnolia
     overtime = Color(0xFFFFD166),           // Extra: Oro Polline
@@ -83,7 +83,7 @@ val SpringExtendedColors = StillExtendedColors(
 // 2. ESTATE — Kasane "Nadeshiko", "Shōbu" & Costa Mediterranea
 // (Rosa Ibisco/Corallo, Giallo Sole, Turchese Laguna, Verde Palma & Sabbia d'Oro)
 // ============================================================================
-val SummerColorScheme = darkColorScheme(
+internal val SummerColorScheme = darkColorScheme(
     primary = Color(0xFFE85D75),            // Pulsante Inizia: Rosa-Corallo Ibisco Estivo
     onPrimary = Color(0xFF28050C),
     primaryContainer = Color(0xFF143C4C),
@@ -106,7 +106,7 @@ val SummerColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF2A5C7A)
 )
 
-val SummerExtendedColors = StillExtendedColors(
+internal val SummerExtendedColors = StillExtendedColors(
     titleColor = Color(0xFFFFD166),         // Titolo "Still" e icone: Giallo Sole d'Estate
     timerDigitsColor = Color(0xFFFFFDF7),   // Numeri Timer: Bianco Madreperla Caldo
     overtime = Color(0xFFFFD166),           // Extra: Oro Solare
@@ -124,7 +124,7 @@ val SummerExtendedColors = StillExtendedColors(
 // 3. AUTUNNO — Kasane "Momiji", "Ominaeshi" & "Shion"
 // (Acero Cremisi, Oro Ginkgo, Verde Muschio del Bosco, Prugna & Castagno)
 // ============================================================================
-val DarkWarmColorScheme = darkColorScheme(
+internal val DarkWarmColorScheme = darkColorScheme(
     primary = Color(0xFF6A994E),            // Pulsante Inizia: Verde Muschio del Bosco (stacca dall'acero!)
     onPrimary = Color(0xFF091F03),
     primaryContainer = Color(0xFF23381B),
@@ -147,7 +147,7 @@ val DarkWarmColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF3E5243)
 )
 
-val AutumnExtendedColors = StillExtendedColors(
+internal val AutumnExtendedColors = StillExtendedColors(
     titleColor = Color(0xFFF4C95D),         // Titolo "Still" e icone: Giallo Oro Ginkgo
     timerDigitsColor = Color(0xFFFFF8EB),   // Numeri Timer: Avorio Pergamena Caldo
     overtime = Color(0xFFF4C95D),           // Extra: Oro Autunnale
@@ -165,7 +165,7 @@ val AutumnExtendedColors = StillExtendedColors(
 // 4. INVERNO — Kasane "Tsubaki" (Camelia nella Neve), "Matsu-gasane" & Baita Alpina
 // (Ghiaccio Cristallino, Rosso Camelia/Camino, Verde Abete, Aurora Viola & Legno Caldo)
 // ============================================================================
-val WinterColorScheme = darkColorScheme(
+internal val WinterColorScheme = darkColorScheme(
     primary = Color(0xFFE06D53),            // Pulsante Inizia: Rosso Camelia Invernale / Calore Camino
     onPrimary = Color(0xFF290902),
     primaryContainer = Color(0xFF1B354D),
@@ -188,7 +188,7 @@ val WinterColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF2D4B6B)
 )
 
-val WinterExtendedColors = StillExtendedColors(
+internal val WinterExtendedColors = StillExtendedColors(
     titleColor = Color(0xFFA9E5FF),         // Titolo "Still" e icone: Azzurro Cristallo di Brina
     timerDigitsColor = Color(0xFFF2EFE6),   // Numeri Timer: Bianco Neve Alabastro
     overtime = Color(0xFFFFD166),           // Extra: Luce Calda Dorata

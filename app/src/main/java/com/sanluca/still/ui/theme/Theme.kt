@@ -5,10 +5,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 
-val LocalStillColors = staticCompositionLocalOf { AutumnExtendedColors }
+internal val LocalStillColors = staticCompositionLocalOf { AutumnExtendedColors }
 
 @Composable
-fun StillTheme(
+internal fun StillTheme(
     palette: StillColorPalette = StillColorPalette.AUTUMN,
     content: @Composable () -> Unit,
 ) {

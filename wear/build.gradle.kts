@@ -61,6 +61,7 @@ android {
 
 dependencies {
 
+    implementation(project(":core"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
@@ -71,7 +72,7 @@ dependencies {
 
     // Wear OS & Google Play Services Wearable Data Layer
     implementation("androidx.wear:wear:1.3.0")
-    implementation("androidx.wear:wear-ongoing:1.0.0")
+    implementation("androidx.wear:wear-ongoing:1.1.0")
     implementation(libs.androidx.fragment.ktx)
     implementation("com.google.android.gms:play-services-wearable:18.2.0")
 
@@ -82,5 +83,6 @@ dependencies {
     implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.3.0")
     implementation("com.google.guava:guava:33.2.1-android")
 
+    testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
 }

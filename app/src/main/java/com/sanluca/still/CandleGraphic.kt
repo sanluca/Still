@@ -95,7 +95,7 @@ half4 main(float2 fragCoord) {
 """
 
 @Composable
-fun CandleTimerGraphic(
+internal fun CandleTimerGraphic(
     waxFraction: Float,
     isRunning: Boolean,
     isOvertime: Boolean,

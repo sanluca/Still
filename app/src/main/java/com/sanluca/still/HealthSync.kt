@@ -7,7 +7,7 @@ import java.time.Instant
 
 private val pendingSyncMutex = Mutex()
 
-suspend fun syncPendingSessionsToHealthConnect(context: Context, healthConnectManager: HealthConnectManager) {
+internal suspend fun syncPendingSessionsToHealthConnect(context: Context, healthConnectManager: HealthConnectManager) {
     pendingSyncMutex.withLock {
         // La coda va letta DENTRO il lock: una seconda chiamata la trova già svuotata
         val pending = getPendingWatchSessions(context)
@@ -28,7 +28,7 @@ suspend fun syncPendingSessionsToHealthConnect(context: Context, healthConnectMa
     }
 }
 
-suspend fun resyncHistoryToHealthConnect(context: Context, healthConnectManager: HealthConnectManager): Boolean {
+internal suspend fun resyncHistoryToHealthConnect(context: Context, healthConnectManager: HealthConnectManager): Boolean {
     return pendingSyncMutex.withLock {
         if (!healthConnectManager.hasAllPermissions()) return@withLock false
         val history = getLocalSessionHistory(context)

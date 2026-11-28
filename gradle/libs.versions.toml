@@ -1,6 +1,6 @@
 [versions]
-appVersion = "3.1.0"
-appVersionCode = "310"
+appVersion = "3.2.0"
+appVersionCode = "320"
 agp = "9.5.3"
 coreKtx = "1.10.1"
 junit = "4.13.2"
@@ -13,9 +13,11 @@ kotlin = "2.2.10"
 composeBom = "2026.02.01"
 playAppUpdate = "2.1.0"
 media3 = "1.11.1"
+coroutines = "1.10.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
@@ -36,4 +38,5 @@ androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplaye
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

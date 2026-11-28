@@ -28,15 +28,6 @@
     <string name="settings_prep_label">Secondi di attesa</string>
     <string name="settings_prep_placeholder">es. 10</string>
     <string name="settings_gong_sound">Suono Campana Tibetana / Gong (Tocco per anteprima):</string>
-    <string name="bell_name_gong">Gong</string>
-    <string name="bell_name_crystal">Quarzo</string>
-    <string name="bell_name_keisu">Keisu</string>
-    <string name="bell_name_tingsha">Tingsha</string>
-    <string name="bell_name_chime">Carillon</string>
-    <string name="bell_name_water_bowl">Ciotola d\'acqua</string>
-    <string name="bell_name_soft_bowl">Ciotola morbida</string>
-    <string name="bell_name_feather">Piuma</string>
-    <string name="bell_name_soft_gong">Gong morbido</string>
     <string name="settings_gong_volume">Volume Campana:</string>
     <string name="settings_alert_mode">Modalità Avviso:</string>
     <string name="alert_mode_both">Entrambi</string>
@@ -120,7 +111,8 @@
     <string name="settings_custom_audio_missing">File selezionato non più disponibile</string>
     <string name="toast_custom_audio_unsupported">Formato non supportato: scegli un file .mp3 o .ogg</string>
     <string name="toast_custom_audio_missing">File audio non trovato o non accessibile. Selezionalo di nuovo.</string>
-    <string name="privacy_dialog_audio_credits">Suoni ambientali integrati forniti da Pixabay.</string>
+    <string name="privacy_dialog_audio_credits">Campane e suoni ambientali integrati forniti da Pixabay.</string>
+    <string name="cd_preview_bell_button">Anteprima campana</string>
     <string name="cd_presets_button">Preset di Meditazione</string>
     <string name="settings_presets_title">Preset di Meditazione</string>
     <string name="settings_presets_count_zero">Nessun preset salvato</string>
@@ -188,4 +180,21 @@
     <string name="reminder_notification_title">Un momento di quiete</string>
     <string name="reminder_notification_body">Prenditi qualche minuto per meditare con Still.</string>
     <string name="health_session_notes">Sessione meditativa registrata con Still</string>
+    <string name="button_ok">OK</string>
+    <string name="opening_impermanence_quote">Ricordati: tutto è impermanente.</string>
+    <string name="cd_settings_button">Impostazioni</string>
+    <string name="cd_stats_button">Statistiche e Storico</string>
+    <string name="cd_guide_button">Guida</string>
+    <string name="cd_info_button">Informativa Privacy e Salute</string>
+    <string name="guide_dialog_title">Guida a Still</string>
+    <string name="guide_section_meditate_title">Come meditare</string>
+    <string name="guide_section_meditate_body">Scegli la durata, avvia il timer, chiudi gli occhi e segui il respiro naturale; se la mente si distrae, riportala lì con calma. Ricordati: tutto è impermanente.</string>
+    <string name="guide_section_about_title">Cos\'è Still</string>
+    <string name="guide_section_about_body">Still è un timer di meditazione essenziale e silenzioso. Offre campane sintetizzate e sottofondi locali che funzionano interamente offline, con sincronizzazione locale verso Wear OS e salvataggio opzionale su Google Salute.</string>
+    <string name="guide_section_privacy_title">Privacy in breve</string>
+    <string name="guide_section_privacy_body">Nessun account, nessuna pubblicità e nessun server esterno. L\'app non richiede accesso a Internet: preferenze, storico e sessioni restano salvati solo localmente sul tuo telefono e sul tuo orologio.</string>
+    <string name="whats_new_dialog_title">Novità di Still v%1$s</string>
+    <string name="whats_new_item_1">• Frase contemplativa in dissolvenza all\'avvio dell\'app (tocca per chiudere subito).</string>
+    <string name="whats_new_item_2">• Nuova guida offline accessibile dal pulsante «?» nella barra superiore.</string>
+    <string name="whats_new_item_3">• Su Wear OS: selettore On/Off per il battito nelle impostazioni e aggiornamento affidabile dell\'attività in corso.</string>
 </resources>

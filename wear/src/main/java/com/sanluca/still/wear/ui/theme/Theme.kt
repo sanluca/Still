@@ -6,7 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 
 @Composable
-fun StillTheme(
+internal fun StillTheme(
     palette: StillColorPalette = StillColorPalette.AUTUMN,
     content: @Composable () -> Unit
 ) {

@@ -11,7 +11,13 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
-import android.util.Log
+import com.sanluca.still.core.ALERT_MODE_BOTH
+import com.sanluca.still.core.ALERT_MODE_SOUND
+import com.sanluca.still.core.ALERT_MODE_VIBRATION
+import com.sanluca.still.core.TINGSHA_FREQ_HZ
+import com.sanluca.still.core.cancelGongVibration
+import com.sanluca.still.core.playGongSound
+import com.sanluca.still.core.triggerHapticGong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,7 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 
-data class StillTimerState(
+internal data class StillTimerState(
     val isRunning: Boolean = false,
     val isPaused: Boolean = false,
     val isPreparing: Boolean = false,
@@ -60,16 +66,16 @@ class StillTimerService : Service() {
 
     companion object {
         // true solo finché il timer del service è realmente attivo
-        @Volatile var isRunning = false
+        @Volatile internal var isRunning = false
         private const val CHANNEL_ID = "still_timer"
         private const val NOTIFICATION_ID = 1
         private const val WAKELOCK_MARGIN_MS = 15 * 60 * 1000L
         private const val WAKELOCK_RENEW_SEC = 10 * 60
 
         private val _timerState = MutableStateFlow(StillTimerState())
-        val timerState: StateFlow<StillTimerState> = _timerState.asStateFlow()
+        internal val timerState: StateFlow<StillTimerState> = _timerState.asStateFlow()
 
-        fun resetState(selectedTimeSeconds: Int = 600) {
+        internal fun resetState(selectedTimeSeconds: Int = 600) {
             _timerState.value = StillTimerState(
                 isRunning = false,
                 isPaused = false,
@@ -84,7 +90,7 @@ class StillTimerService : Service() {
             )
         }
 
-        fun adjustPausedState(deltaSeconds: Int) {
+        internal fun adjustPausedState(deltaSeconds: Int) {
             val current = _timerState.value
             if (!current.isPaused || current.activeSessionPlannedSeconds <= 0 || current.isOvertime || deltaSeconds == 0) {
                 return
@@ -168,14 +174,12 @@ class StillTimerService : Service() {
             }
             val notification = buildNotification(initialNotificationText)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                Log.d("StillApp", "Avvio FGS StillTimerService (API 34+): type=MEDIA_PLAYBACK")
                 startForeground(
                     NOTIFICATION_ID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                 )
             } else {
-                Log.d("StillApp", "Avvio FGS StillTimerService (<API 34)")
                 startForeground(NOTIFICATION_ID, notification)
             }
             startTimer(freq, intervalMins, selectedTime, isResume, elapsedOffset, gongVolume, alertMode, intervalFreq, prepSeconds)

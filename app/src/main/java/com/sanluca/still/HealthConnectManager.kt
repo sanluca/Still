@@ -12,9 +12,9 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 @OptIn(ExperimentalMindfulnessSessionApi::class)
-class HealthConnectManager(private val context: Context) {
+internal class HealthConnectManager(private val context: Context) {
 
-    val healthConnectClient by lazy { HealthConnectClient.getOrCreate(context) }
+    private val healthConnectClient by lazy { HealthConnectClient.getOrCreate(context) }
 
     // Richiediamo ESCLUSIVAMENTE il permesso di SCRITTURA per la meditazione
     val permissions = setOf(
@@ -59,8 +59,7 @@ class HealthConnectManager(private val context: Context) {
             )
             healthConnectClient.insertRecords(listOf(record))
             true
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: Exception) {
             false
         }
     }
@@ -76,8 +75,7 @@ class HealthConnectManager(private val context: Context) {
                 )
             )
             true
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: Exception) {
             false
         }
     }

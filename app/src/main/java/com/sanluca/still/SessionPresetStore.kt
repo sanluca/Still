@@ -1,6 +1,10 @@
 package com.sanluca.still
 
 import android.content.Context
+import com.sanluca.still.core.ALERT_MODE_BOTH
+import com.sanluca.still.core.ALERT_MODE_SOUND
+import com.sanluca.still.core.ALERT_MODE_VIBRATION
+import com.sanluca.still.core.TINGSHA_FREQ_HZ
 import com.sanluca.still.ui.theme.StillColorPalette
 import org.json.JSONArray
 import org.json.JSONObject
@@ -9,7 +13,7 @@ import java.util.UUID
 private const val KEY_MEDITATION_PRESETS = "meditation_presets_list"
 private const val KEY_ACTIVE_PRESET_ID = "active_preset_id"
 
-data class MeditationPreset(
+internal data class MeditationPreset(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val durationSeconds: Int? = null,
@@ -34,17 +38,17 @@ data class MeditationPreset(
         colorPaletteId?.let { StillColorPalette.fromId(it) }
 }
 
-fun getSavedPresets(context: Context): List<MeditationPreset> {
+internal fun getSavedPresets(context: Context): List<MeditationPreset> {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val raw = prefs.getString(KEY_MEDITATION_PRESETS, null) ?: return emptyList()
     return parsePresetsJson(raw)
 }
 
-fun savePreset(context: Context, preset: MeditationPreset): List<MeditationPreset> {
+internal fun normalizePreset(preset: MeditationPreset): MeditationPreset? {
     val cleanedName = preset.name.trim()
-    if (cleanedName.isEmpty()) return getSavedPresets(context)
+    if (cleanedName.isEmpty()) return null
 
-    val normalized = preset.copy(
+    return preset.copy(
         id = preset.id.ifBlank { UUID.randomUUID().toString() },
         name = cleanedName,
         durationSeconds = preset.durationSeconds?.let { if (it == -1 || it > 0) it else null },
@@ -63,6 +67,10 @@ fun savePreset(context: Context, preset: MeditationPreset): List<MeditationPrese
         timerStyle = preset.timerStyle?.takeIf { it in 0..3 },
         colorPaletteId = preset.colorPaletteId?.let { StillColorPalette.fromId(it).id }
     )
+}
+
+internal fun savePreset(context: Context, preset: MeditationPreset): List<MeditationPreset> {
+    val normalized = normalizePreset(preset) ?: return getSavedPresets(context)
 
     val current = getSavedPresets(context).toMutableList()
     val existingIndex = current.indexOfFirst { it.id == normalized.id }
@@ -75,7 +83,7 @@ fun savePreset(context: Context, preset: MeditationPreset): List<MeditationPrese
     return current
 }
 
-fun deletePreset(context: Context, presetId: String): List<MeditationPreset> {
+internal fun deletePreset(context: Context, presetId: String): List<MeditationPreset> {
     val updated = getSavedPresets(context).filterNot { it.id == presetId }
     persistPresets(context, updated)
     if (getActivePresetId(context) == presetId) {
@@ -84,12 +92,12 @@ fun deletePreset(context: Context, presetId: String): List<MeditationPreset> {
     return updated
 }
 
-fun getActivePresetId(context: Context): String? {
+internal fun getActivePresetId(context: Context): String? {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getString(KEY_ACTIVE_PRESET_ID, null)?.takeIf { it.isNotBlank() }
 }
 
-fun saveActivePresetId(context: Context, presetId: String?) {
+internal fun saveActivePresetId(context: Context, presetId: String?) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val editor = prefs.edit()
     if (presetId.isNullOrBlank()) {
@@ -100,7 +108,7 @@ fun saveActivePresetId(context: Context, presetId: String?) {
     editor.apply()
 }
 
-fun getActivePreset(context: Context): MeditationPreset? {
+internal fun getActivePreset(context: Context): MeditationPreset? {
     val activeId = getActivePresetId(context) ?: return null
     return getSavedPresets(context).firstOrNull { it.id == activeId }
 }

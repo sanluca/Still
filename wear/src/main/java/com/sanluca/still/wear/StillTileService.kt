@@ -1,7 +1,6 @@
 package com.sanluca.still.wear
 
 import android.content.Context
-import android.util.Log
 import androidx.compose.ui.graphics.toArgb
 import androidx.wear.protolayout.ActionBuilders
 import androidx.wear.protolayout.ColorBuilders.argb
@@ -29,18 +28,11 @@ import com.sanluca.still.wear.ui.theme.SummerColorScheme
 import com.sanluca.still.wear.ui.theme.WinterColorScheme
 
 private const val TILE_RESOURCES_VERSION = "8"
-private const val TILE_LOG_TAG = "StillWear"
 
 class StillTileService : TileService() {
 
     override fun onTileRequest(requestParams: RequestBuilders.TileRequest): ListenableFuture<TileBuilders.Tile> {
         val deviceParams = requestParams.deviceConfiguration
-        val isRunning = StillTimerService.isServiceRunning
-        val snapshot = StillTimerService.timerState.value
-        Log.d(
-            TILE_LOG_TAG,
-            "Tile onTileRequest: running=$isRunning, prep=${snapshot.isPreparing}, overtime=${snapshot.isOvertime}, screen=${deviceParams.screenWidthDp}x${deviceParams.screenHeightDp}"
-        )
 
         val singleTileTimeline = TimelineBuilders.Timeline.Builder()
             .addTimelineEntry(
@@ -102,6 +94,10 @@ class StillTileService : TileService() {
                 ActionBuilders.AndroidActivity.Builder()
                     .setPackageName(context.packageName)
                     .setClassName("com.sanluca.still.wear.MainActivity")
+                    .addKeyToExtraMapping(
+                        MainActivity.EXTRA_FROM_TILE,
+                        ActionBuilders.AndroidBooleanExtra.Builder().setValue(true).build()
+                    )
                     .build()
             )
             .build()

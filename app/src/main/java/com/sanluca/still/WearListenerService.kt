@@ -1,7 +1,6 @@
 package com.sanluca.still
 
 import android.net.Uri
-import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
@@ -18,7 +17,6 @@ import java.util.concurrent.TimeUnit
 class WearListenerService : WearableListenerService() {
 
     companion object {
-        private const val LOG_TAG = "StillApp"
         // Mutex condiviso a livello di processo: il sistema può istanziare più volte il service
         private val sessionMutex = Mutex()
     }
@@ -32,8 +30,7 @@ class WearListenerService : WearableListenerService() {
                 if (path.startsWith("/meditation_completed")) {
                     val dataMap = try {
                         DataMapItem.fromDataItem(event.dataItem).dataMap
-                    } catch (e: Exception) {
-                        Log.e(LOG_TAG, "Errore deserializzazione DataItem Wear: path=$path", e)
+                    } catch (_: Exception) {
                         continue
                     }
                     val durationSec = dataMap.getInt("duration_sec", 0)
@@ -55,11 +52,7 @@ class WearListenerService : WearableListenerService() {
                         val e = rawParts[2].toLongOrNull() ?: 0L
                         if (d > 0 && s > 0 && e >= s) {
                             processCompletedSession(d, s, e, uri, startBpm, endBpm, avgBpm)
-                        } else {
-                            Log.w(LOG_TAG, "Sessione Wear scartata (raw non valido): dur=$d, start=$s, end=$e")
                         }
-                    } else {
-                        Log.w(LOG_TAG, "Sessione Wear scartata (timestamp non validi): dur=$durationSec, start=$startEpochSec, end=$endEpochSec")
                     }
                 }
             }
@@ -114,12 +107,10 @@ class WearListenerService : WearableListenerService() {
                             5,
                             TimeUnit.SECONDS
                         )
-                    } catch (e: Exception) {
-                        Log.w(LOG_TAG, "Impossibile eliminare DataItem Wear elaborato: $dataItemUri", e)
+                    } catch (_: Exception) {
                     }
                 }
-            } catch (e: Exception) {
-                Log.e(LOG_TAG, "Errore elaborazione sessione completata da Wear", e)
+            } catch (_: Exception) {
             }
         }
     }

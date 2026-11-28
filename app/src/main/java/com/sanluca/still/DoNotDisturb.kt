@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 
-fun isDndPermissionGranted(context: Context): Boolean {
+internal fun isDndPermissionGranted(context: Context): Boolean {
     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     return notificationManager.isNotificationPolicyAccessGranted
 }
@@ -13,7 +13,7 @@ fun isDndPermissionGranted(context: Context): Boolean {
 private const val DND_STATE_PREFS_NAME = "still_dnd_state"
 private const val KEY_PREV_INTERRUPTION_FILTER = "prev_interruption_filter"
 
-fun enableDoNotDisturb(context: Context) {
+internal fun enableDoNotDisturb(context: Context) {
     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (notificationManager.isNotificationPolicyAccessGranted) {
         try {
@@ -22,13 +22,12 @@ fun enableDoNotDisturb(context: Context) {
                 prefs.edit().putInt(KEY_PREV_INTERRUPTION_FILTER, notificationManager.currentInterruptionFilter).apply()
             }
             notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: Exception) {
         }
     }
 }
 
-fun disableDoNotDisturb(context: Context) {
+internal fun disableDoNotDisturb(context: Context) {
     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (notificationManager.isNotificationPolicyAccessGranted) {
         try {
@@ -41,17 +40,15 @@ fun disableDoNotDisturb(context: Context) {
                 notificationManager.setInterruptionFilter(previous)
                 prefs.edit().remove(KEY_PREV_INTERRUPTION_FILTER).apply()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: Exception) {
         }
     }
 }
 
-fun requestDndAccess(context: Context) {
+internal fun requestDndAccess(context: Context) {
     try {
         val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
         context.startActivity(intent)
-    } catch (e: Exception) {
-        e.printStackTrace()
+    } catch (_: Exception) {
     }
 }

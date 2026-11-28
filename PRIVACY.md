@@ -1,6 +1,6 @@
-# Privacy Policy - Still (Informativa sulla Privacy — v3.0.0)
+# Privacy Policy - Still (Informativa sulla Privacy — v3.2.0)
 
-*Ultimo aggiornamento / Last updated: 22 Novembre 2026*
+*Ultimo aggiornamento / Last updated: 28 Novembre 2026*
 
 ---
 
@@ -26,9 +26,9 @@ Still si integra con Google Salute (Health Connect) per permettere agli utenti d
 
 #### Sensore Battito Cardiaco Opzionale (`READ_HEART_RATE` / `BODY_SENSORS` — Wear OS)
 L'app per smartwatch Wear OS dichiara i permessi opzionali `android.permission.health.READ_HEART_RATE` (Android 16 / API 36 e superiori) e `android.permission.BODY_SENSORS` (versioni precedenti):
-- **Raccolta opzionale e locale**: solo se espressamente autorizzato dall'utente, l'orologio legge in modo intermittente e locale il sensore del battito cardiaco (`Sensor.TYPE_HEART_RATE`) esclusivamente durante una sessione di meditazione attiva (dopo l'eventuale preparazione) per calcolare i valori sintetici della sessione (iniziale, finale e medio in BPM).
+- **Raccolta opzionale e locale**: solo se abilitata nelle impostazioni dell'orologio (*Rileva battito: On*) ed espressamente autorizzata dall'utente, l'orologio legge in modo intermittente e locale il sensore del battito cardiaco (`Sensor.TYPE_HEART_RATE`) esclusivamente durante una sessione di meditazione attiva (dopo l'eventuale preparazione) per calcolare i valori sintetici della sessione (iniziale, finale e medio in BPM).
 - **Nessuna visualizzazione invasiva e nessuna condivisione**: i valori BPM non vengono mostrati sullo schermo dell'orologio durante la pratica, **non vengono inviati a Google Salute (Health Connect)** e **non vengono mai trasmessi a server esterni**. Vengono conservati unicamente nello storico locale della sessione sullo smartphone abbinato.
-- **Utilizzo facoltativo**: se l'utente rifiuta o revoca il permesso, il timer e tutte le funzioni di meditazione su Wear OS continuano a funzionare regolarmente senza alcuna limitazione.
+- **Utilizzo facoltativo**: l'utente può disattivare il rilevamento in qualsiasi momento dalle impostazioni dell'orologio (*Rileva battito: Off*) oppure rifiutare/revocare il permesso di sistema; in tal caso il sensore non viene attivato e tutte le funzioni di meditazione su Wear OS continuano a funzionare regolarmente senza alcuna limitazione.
 
 ### 3. Dati Memorizzati sul Dispositivo, File Locali e Backup
 - **Preferenze, Impostazioni, Preset e Promemoria**: le preferenze dell'app su smartphone e smartwatch (es. durata del timer, stile visivo, timbro e volume delle campane, sottofondo sonoro e relativo volume, intervallo campane, attivazione automatica Non Disturbare su smartphone, tema colori), gli eventuali **preset di meditazione** salvati su smartphone (nome e parametri configurati) e la configurazione opzionale dei **promemoria di meditazione** (stato attivo/disattivo, orario, frequenza e giorni scelti) vengono salvati esclusivamente in locale nella memoria privata del dispositivo tramite `SharedPreferences`.
@@ -46,7 +46,7 @@ La comunicazione tra l'app per smartwatch (Wear OS) e l'app per smartphone avvie
 ### 5. Controllo dell'Utente e Cancellazione dei Dati
 - L'utente ha il pieno controllo sui permessi di Health Connect, che possono essere revocati in qualsiasi momento tramite le *Impostazioni di Sistema Android > Sicurezza e Privacy > Connessione Salute*.
 - I promemoria di meditazione su smartphone possono essere disattivati in qualsiasi momento dalle impostazioni di Still oppure silenziati/gestiti tramite le *Impostazioni di Sistema Android > App > Still > Notifiche*.
-- Il permesso per il battito cardiaco su Wear OS (`READ_HEART_RATE` su Android 16+ / `BODY_SENSORS` su versioni precedenti) può essere concesso o revocato in qualsiasi momento dalle *Impostazioni dell'orologio > App > Autorizzazioni*.
+- Il rilevamento del battito cardiaco su Wear OS può essere attivato o disattivato in qualsiasi momento dalle *Impostazioni dell'app sull'orologio (Rileva battito: Off / On)*, e il relativo permesso (`READ_HEART_RATE` su Android 16+ / `BODY_SENSORS` su versioni precedenti) può essere concesso o revocato dalle *Impostazioni dell'orologio > App > Autorizzazioni*.
 - Le sessioni registrate su Health Connect possono essere visualizzate o eliminate direttamente dall'app di sistema Health Connect / Google Salute.
 - La disinstallazione dell'applicazione Still comporta la cancellazione automatica di tutti i dati memorizzati localmente sul dispositivo (a meno che non vengano successivamente ripristinati tramite il backup di sistema Google Android o tramite un file CSV esportato manualmente dall'utente).
 
@@ -78,9 +78,9 @@ Still integrates with Google Health Connect solely to allow users to sync their 
 
 #### Optional Heart Rate Sensor (`READ_HEART_RATE` / `BODY_SENSORS` — Wear OS)
 The Wear OS smartwatch app declares the optional `android.permission.health.READ_HEART_RATE` (Android 16 / API 36+) and `android.permission.BODY_SENSORS` (earlier versions) permissions:
-- **Optional Local-Only Sampling**: Only when explicitly granted by the user, the watch performs lightweight, intermittent local readings from the heart rate sensor (`Sensor.TYPE_HEART_RATE`) strictly during an active meditation session (after preparation) to compute session summary metrics (start, end, and average BPM).
+- **Optional Local-Only Sampling**: Only when enabled in watch settings (*Heart rate: On*) and explicitly granted by the user, the watch performs lightweight, intermittent local readings from the heart rate sensor (`Sensor.TYPE_HEART_RATE`) strictly during an active meditation session (after preparation) to compute session summary metrics (start, end, and average BPM).
 - **Silent & Never Shared Externally**: BPM figures are never displayed on the watch screen during meditation, **are never written to Google Health Connect**, and **are never sent to external servers**. They are saved strictly within the local session history on the paired smartphone.
-- **Fully Optional**: If the user denies or revokes this permission, the timer and all meditation features on Wear OS continue working normally without restriction.
+- **Fully Optional**: Users can switch heart rate tracking off anytime in watch settings (*Heart rate: Off*) or deny/revoke the system permission; when off, the sensor is never activated and all meditation features on Wear OS continue working normally without restriction.
 
 ### 3. Local Data Storage, User Files & Backups
 - **Settings, Preferences, Presets & Reminders**: User configurations on phone and watch (such as timer duration, visual style, bell sound and volume, ambient soundscape and volume, interval chime settings, Auto Do Not Disturb on smartphone, and color theme), any **meditation presets** saved on smartphone (preset name and configured parameters), and optional **meditation reminder** preferences (enabled state, time, frequency, and selected days) are stored strictly locally in Android's private `SharedPreferences`.
@@ -98,7 +98,7 @@ Communication between the Wear OS watch and paired Android phone takes place loc
 ### 5. User Rights and Data Deletion
 - Users can revoke Health Connect permissions at any time via Android *Settings > Security & Privacy > Health Connect*.
 - Smartphone meditation reminders can be disabled at any time in Still settings or muted/managed via Android *Settings > Apps > Still > Notifications*.
-- The Wear OS heart rate permission (`READ_HEART_RATE` on Android 16+ / `BODY_SENSORS` on earlier versions) can be granted or revoked at any time via watch *Settings > Apps > Permissions*.
+- Wear OS heart rate tracking can be switched on or off anytime directly in watch app settings (*Heart rate: Off / On*), and the corresponding system permission (`READ_HEART_RATE` on Android 16+ / `BODY_SENSORS` on earlier versions) can be granted or revoked via watch *Settings > Apps > Permissions*.
 - Sessions saved to Health Connect can be viewed or deleted at any time through the Android Health Connect system interface.
 - Uninstalling the application deletes all locally stored preferences and history from the device (unless subsequently restored via Android's Google system backup or a user-exported CSV backup file).
 

@@ -11,15 +11,6 @@
     <string name="button_start">Inizia</string>
     <string name="settings_title">Impostazioni</string>
     <string name="settings_gong_sound">Suono Gong:</string>
-    <string name="bell_name_gong">Gong</string>
-    <string name="bell_name_crystal">Quarzo</string>
-    <string name="bell_name_keisu">Keisu</string>
-    <string name="bell_name_tingsha">Tingsha</string>
-    <string name="bell_name_chime">Carillon</string>
-    <string name="bell_name_water_bowl">Ciotola d\'acqua</string>
-    <string name="bell_name_soft_bowl">Ciotola morbida</string>
-    <string name="bell_name_feather">Piuma</string>
-    <string name="bell_name_soft_gong">Gong morbido</string>
     <string name="settings_gong_volume">Volume Campana:</string>
     <string name="settings_alert_mode">Modalità Avviso:</string>
     <string name="alert_mode_both">Entrambi</string>
@@ -35,7 +26,9 @@
     <string name="complication_label">Still</string>
     <string name="complication_description">Accesso rapido per iniziare una meditazione con Still</string>
     <string name="complication_short_text">Still</string>
-    <string name="settings_hr_authorize">Autorizza Battito</string>
+    <string name="settings_hr_label">Rileva battito:</string>
+    <string name="settings_hr_on">On</string>
+    <string name="settings_hr_off">Off</string>
     <string name="tile_title">Still</string>
     <string name="tile_status_active">Sessione attiva</string>
     <string name="tile_status_preparing">Preparazione…</string>

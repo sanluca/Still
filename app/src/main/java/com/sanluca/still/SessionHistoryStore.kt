@@ -14,7 +14,7 @@ import java.util.Locale
 // Lock condiviso da MainActivity e WearListenerService per i read-modify-write su storico e coda Health Connect
 private val historyPrefsLock = Any()
 
-data class SessionLogEntry(
+internal data class SessionLogEntry(
     val id: Long,
     val dateFormatted: String,
     val durationMinutes: Int,
@@ -26,14 +26,14 @@ data class SessionLogEntry(
     val avgBpm: Int? = null
 )
 
-data class PendingSessionEntry(
+internal data class PendingSessionEntry(
     val durationSec: Int,
     val startEpochSec: Long,
     val endEpochSec: Long,
     val rawString: String
 )
 
-fun savePendingWatchSession(context: Context, durationSec: Int, startInstant: Instant, endInstant: Instant) {
+internal fun savePendingWatchSession(context: Context, durationSec: Int, startInstant: Instant, endInstant: Instant) {
     val appContext = context.applicationContext ?: context
     val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     synchronized(historyPrefsLock) {
@@ -55,7 +55,7 @@ fun savePendingWatchSession(context: Context, durationSec: Int, startInstant: In
     }
 }
 
-fun getPendingWatchSessions(context: Context): List<PendingSessionEntry> {
+internal fun getPendingWatchSessions(context: Context): List<PendingSessionEntry> {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val set = prefs.getStringSet(KEY_PENDING_HEALTH_SESSIONS, emptySet()) ?: emptySet()
     return set.mapNotNull { raw ->
@@ -69,7 +69,7 @@ fun getPendingWatchSessions(context: Context): List<PendingSessionEntry> {
     }
 }
 
-fun clearPendingWatchSessions(context: Context, rawList: List<String>) {
+internal fun clearPendingWatchSessions(context: Context, rawList: List<String>) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     synchronized(historyPrefsLock) {
         val existingSet = prefs.getStringSet(KEY_PENDING_HEALTH_SESSIONS, emptySet()) ?: emptySet()
@@ -79,7 +79,7 @@ fun clearPendingWatchSessions(context: Context, rawList: List<String>) {
     }
 }
 
-fun addSessionToLocalHistory(
+internal fun addSessionToLocalHistory(
     context: Context,
     durationSeconds: Int,
     startInstant: Instant,
@@ -112,7 +112,7 @@ fun addSessionToLocalHistory(
     }
 }
 
-fun deleteSessionFromLocalHistory(context: Context, rawString: String) {
+internal fun deleteSessionFromLocalHistory(context: Context, rawString: String) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     synchronized(historyPrefsLock) {
         val existingSet = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
@@ -122,7 +122,7 @@ fun deleteSessionFromLocalHistory(context: Context, rawString: String) {
     }
 }
 
-fun getLocalSessionHistory(context: Context): List<SessionLogEntry> {
+internal fun getLocalSessionHistory(context: Context): List<SessionLogEntry> {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val set = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
     val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
@@ -153,7 +153,7 @@ fun getLocalSessionHistory(context: Context): List<SessionLogEntry> {
     }.sortedByDescending { it.startEpochSec }
 }
 
-fun calculateStreakDays(history: List<SessionLogEntry>): Int {
+internal fun calculateStreakDays(history: List<SessionLogEntry>): Int {
     if (history.isEmpty()) return 0
 
     val zone = ZoneId.systemDefault()
@@ -176,7 +176,7 @@ fun calculateStreakDays(history: List<SessionLogEntry>): Int {
     return streak
 }
 
-fun calculateBestStreakDays(history: List<SessionLogEntry>): Int {
+internal fun calculateBestStreakDays(history: List<SessionLogEntry>): Int {
     if (history.isEmpty()) return 0
 
     val zone = ZoneId.systemDefault()
@@ -203,7 +203,7 @@ fun calculateBestStreakDays(history: List<SessionLogEntry>): Int {
     return bestStreak
 }
 
-data class HistoryImportResult(
+internal data class HistoryImportResult(
     val importedCount: Int,
     val skippedDuplicates: Int,
     val invalidCount: Int
@@ -306,9 +306,10 @@ private fun parseDateTimeToEpochSec(raw: String, zone: ZoneId): Long? {
     return null
 }
 
-fun exportSessionHistoryToCsv(context: Context): String {
-    val history = getLocalSessionHistory(context)
-    val zone = ZoneId.systemDefault()
+internal fun formatHistoryAsCsv(
+    history: List<SessionLogEntry>,
+    zone: ZoneId = ZoneId.systemDefault()
+): String {
     val builder = StringBuilder()
     builder.append(CSV_HEADER)
     for (entry in history) {
@@ -330,7 +331,16 @@ fun exportSessionHistoryToCsv(context: Context): String {
     return builder.toString()
 }
 
-fun importSessionHistoryFromCsv(context: Context, csvContent: String): HistoryImportResult {
+internal fun exportSessionHistoryToCsv(context: Context): String {
+    val history = getLocalSessionHistory(context)
+    return formatHistoryAsCsv(history)
+}
+
+internal fun mergeCsvIntoHistory(
+    existingSet: Set<String>,
+    csvContent: String,
+    zone: ZoneId = ZoneId.systemDefault()
+): Pair<Set<String>, HistoryImportResult> {
     val cleanedContent = csvContent.removePrefix("\uFEFF")
     val nonEmptyLines = cleanedContent
         .lineSequence()
@@ -364,97 +374,101 @@ fun importSessionHistoryFromCsv(context: Context, csvContent: String): HistoryIm
     val avgBpmIdx = if (hasHeader) normalizedHeader.indexOf("avg_bpm") else 6
 
     val dataLines = if (hasHeader) nonEmptyLines.drop(1) else nonEmptyLines
-    val zone = ZoneId.systemDefault()
-
-    val appContext = context.applicationContext ?: context
-    val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     var importedCount = 0
     var skippedDuplicates = 0
     var invalidCount = 0
 
-    synchronized(historyPrefsLock) {
-        val existingSet = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
-        val updatedSet = existingSet.toMutableSet()
-        val existingKeys = HashSet<Pair<Long, Long>>(existingSet.size)
+    val updatedSet = existingSet.toMutableSet()
+    val existingKeys = HashSet<Pair<Long, Long>>(existingSet.size)
 
-        for (raw in existingSet) {
-            val parts = raw.split("|")
-            if (parts.size >= 2) {
-                val ts = parts[0].toLongOrNull() ?: 0L
-                val mins = parts[1].toIntOrNull() ?: 0
-                val startSec = if (parts.size >= 4) parts[2].toLongOrNull() ?: (ts / 1000L) else (ts / 1000L)
-                val endSec = if (parts.size >= 4) parts[3].toLongOrNull() ?: ((ts / 1000L) + mins * 60L) else ((ts / 1000L) + mins * 60L)
-                if (startSec > 0L && endSec >= startSec) {
-                    existingKeys.add(startSec to endSec)
-                }
+    for (raw in existingSet) {
+        val parts = raw.split("|")
+        if (parts.size >= 2) {
+            val ts = parts[0].toLongOrNull() ?: 0L
+            val mins = parts[1].toIntOrNull() ?: 0
+            val startSec = if (parts.size >= 4) parts[2].toLongOrNull() ?: (ts / 1000L) else (ts / 1000L)
+            val endSec = if (parts.size >= 4) parts[3].toLongOrNull() ?: ((ts / 1000L) + mins * 60L) else ((ts / 1000L) + mins * 60L)
+            if (startSec > 0L && endSec >= startSec) {
+                existingKeys.add(startSec to endSec)
+            }
+        }
+    }
+
+    for (line in dataLines) {
+        val cells = parseCsvLine(line, delimiter)
+        fun cell(index: Int): String = if (index in cells.indices) cells[index].trim() else ""
+
+        val rawDateTime = cell(dateTimeIdx)
+        val rawDuration = cell(durationIdx).toIntOrNull()
+        var startEpochSec = cell(startEpochIdx).toLongOrNull() ?: -1L
+        var endEpochSec = cell(endEpochIdx).toLongOrNull() ?: -1L
+
+        if ((startEpochSec <= 0L || endEpochSec < startEpochSec) &&
+            rawDateTime.isNotEmpty() &&
+            rawDuration != null &&
+            rawDuration > 0
+        ) {
+            val parsedStart = parseDateTimeToEpochSec(rawDateTime, zone)
+            if (parsedStart != null && parsedStart > 0L) {
+                startEpochSec = parsedStart
+                endEpochSec = parsedStart + rawDuration * 60L
             }
         }
 
-        for (line in dataLines) {
-            val cells = parseCsvLine(line, delimiter)
-            fun cell(index: Int): String = if (index in cells.indices) cells[index].trim() else ""
-
-            val rawDateTime = cell(dateTimeIdx)
-            val rawDuration = cell(durationIdx).toIntOrNull()
-            var startEpochSec = cell(startEpochIdx).toLongOrNull() ?: -1L
-            var endEpochSec = cell(endEpochIdx).toLongOrNull() ?: -1L
-
-            if ((startEpochSec <= 0L || endEpochSec < startEpochSec) &&
-                rawDateTime.isNotEmpty() &&
-                rawDuration != null &&
-                rawDuration > 0
-            ) {
-                val parsedStart = parseDateTimeToEpochSec(rawDateTime, zone)
-                if (parsedStart != null && parsedStart > 0L) {
-                    startEpochSec = parsedStart
-                    endEpochSec = parsedStart + rawDuration * 60L
-                }
-            }
-
-            if (startEpochSec <= 0L || endEpochSec < startEpochSec) {
-                invalidCount++
-                continue
-            }
-
-            val durationMinutes = if (rawDuration != null && rawDuration > 0) {
-                rawDuration
-            } else {
-                ((endEpochSec - startEpochSec) / 60L).toInt().coerceAtLeast(1)
-            }
-            val timestamp = startEpochSec * 1000L
-            val startBpm = cell(startBpmIdx).toIntOrNull()?.takeIf { it in 30..220 }
-            val endBpm = cell(endBpmIdx).toIntOrNull()?.takeIf { it in 30..220 }
-            val avgBpm = cell(avgBpmIdx).toIntOrNull()?.takeIf { it in 30..220 }
-
-            val dedupKey = startEpochSec to endEpochSec
-            if (!existingKeys.add(dedupKey)) {
-                skippedDuplicates++
-                continue
-            }
-
-            val hasHr = startBpm != null || endBpm != null || avgBpm != null
-            val rawEntry = if (hasHr) {
-                "$timestamp|$durationMinutes|$startEpochSec|$endEpochSec|${startBpm ?: 0}|${endBpm ?: 0}|${avgBpm ?: 0}"
-            } else {
-                "$timestamp|$durationMinutes|$startEpochSec|$endEpochSec"
-            }
-            updatedSet.add(rawEntry)
-            importedCount++
+        if (startEpochSec <= 0L || endEpochSec < startEpochSec) {
+            invalidCount++
+            continue
         }
 
-        if (importedCount > 0) {
-            prefs.edit().putStringSet(KEY_SESSION_HISTORY, updatedSet).apply()
+        val durationMinutes = if (rawDuration != null && rawDuration > 0) {
+            rawDuration
+        } else {
+            ((endEpochSec - startEpochSec) / 60L).toInt().coerceAtLeast(1)
         }
+        val timestamp = startEpochSec * 1000L
+        val startBpm = cell(startBpmIdx).toIntOrNull()?.takeIf { it in 30..220 }
+        val endBpm = cell(endBpmIdx).toIntOrNull()?.takeIf { it in 30..220 }
+        val avgBpm = cell(avgBpmIdx).toIntOrNull()?.takeIf { it in 30..220 }
+
+        val dedupKey = startEpochSec to endEpochSec
+        if (!existingKeys.add(dedupKey)) {
+            skippedDuplicates++
+            continue
+        }
+
+        val hasHr = startBpm != null || endBpm != null || avgBpm != null
+        val rawEntry = if (hasHr) {
+            "$timestamp|$durationMinutes|$startEpochSec|$endEpochSec|${startBpm ?: 0}|${endBpm ?: 0}|${avgBpm ?: 0}"
+        } else {
+            "$timestamp|$durationMinutes|$startEpochSec|$endEpochSec"
+        }
+        updatedSet.add(rawEntry)
+        importedCount++
     }
 
     if (!hasHeader && importedCount == 0 && skippedDuplicates == 0 && invalidCount > 0) {
         throw IllegalArgumentException("No valid CSV session rows found")
     }
 
-    return HistoryImportResult(
+    val result = HistoryImportResult(
         importedCount = importedCount,
         skippedDuplicates = skippedDuplicates,
         invalidCount = invalidCount
     )
+    return updatedSet to result
+}
+
+internal fun importSessionHistoryFromCsv(context: Context, csvContent: String): HistoryImportResult {
+    val appContext = context.applicationContext ?: context
+    val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    synchronized(historyPrefsLock) {
+        val existingSet = prefs.getStringSet(KEY_SESSION_HISTORY, emptySet()) ?: emptySet()
+        val (updatedSet, result) = mergeCsvIntoHistory(existingSet, csvContent)
+        if (result.importedCount > 0) {
+            prefs.edit().putStringSet(KEY_SESSION_HISTORY, updatedSet).apply()
+        }
+        return result
+    }
 }

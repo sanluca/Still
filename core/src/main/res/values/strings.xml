@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bell_name_classic_bowl">Tibetan Bowl</string>
+    <string name="bell_name_pure_bell">Pure Bell</string>
+    <string name="bell_name_tibetan_gong">Tibetan Gong</string>
+    <string name="bell_name_temple_bowl">Temple Bowl</string>
+    <string name="bell_name_high_zen">High Zen Bell</string>
+    <string name="bell_name_harmonic_bowl">Harmonic Bowl</string>
+    <string name="bell_name_warm_bowl">Warm Bowl</string>
+    <string name="bell_name_eflat_bowl">E-Flat Bowl</string>
+    <string name="bell_name_monk_gong">Monk\'s Gong</string>
+    <string name="bell_name_bright_strike">Bright Strike</string>
+    <string name="bell_name_deep_bowl">Deep Bowl</string>
+    <string name="bell_name_low_bowl">Low Bowl</string>
+    <string name="bell_name_natural_bowl">Natural Bowl</string>
+</resources>

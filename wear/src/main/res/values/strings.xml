@@ -11,15 +11,6 @@
     <string name="button_start">Start</string>
     <string name="settings_title">Settings</string>
     <string name="settings_gong_sound">Gong Sound:</string>
-    <string name="bell_name_gong">Gong</string>
-    <string name="bell_name_crystal">Crystal</string>
-    <string name="bell_name_keisu">Keisu</string>
-    <string name="bell_name_tingsha">Tingsha</string>
-    <string name="bell_name_chime">Chime</string>
-    <string name="bell_name_water_bowl">Water Bowl</string>
-    <string name="bell_name_soft_bowl">Soft Bowl</string>
-    <string name="bell_name_feather">Feather</string>
-    <string name="bell_name_soft_gong">Soft Gong</string>
     <string name="settings_gong_volume">Bell Volume:</string>
     <string name="settings_alert_mode">Alert Mode:</string>
     <string name="alert_mode_both">Both</string>
@@ -35,7 +26,9 @@
     <string name="complication_label">Still</string>
     <string name="complication_description">Quick shortcut to start a meditation session in Still</string>
     <string name="complication_short_text">Still</string>
-    <string name="settings_hr_authorize">Authorize Heart Rate</string>
+    <string name="settings_hr_label">Heart rate:</string>
+    <string name="settings_hr_on">On</string>
+    <string name="settings_hr_off">Off</string>
     <string name="tile_title">Still</string>
     <string name="tile_status_active">Session active</string>
     <string name="tile_status_preparing">Preparing…</string>

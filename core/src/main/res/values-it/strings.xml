@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="bell_name_classic_bowl">Ciotola tibetana</string>
+    <string name="bell_name_pure_bell">Campanella pura</string>
+    <string name="bell_name_tibetan_gong">Gong tibetano</string>
+    <string name="bell_name_temple_bowl">Campana del tempio</string>
+    <string name="bell_name_high_zen">Campana Zen acuta</string>
+    <string name="bell_name_harmonic_bowl">Campana armonica</string>
+    <string name="bell_name_warm_bowl">Ciotola calda</string>
+    <string name="bell_name_eflat_bowl">Ciotola in Mi♭</string>
+    <string name="bell_name_monk_gong">Gong del monaco</string>
+    <string name="bell_name_bright_strike">Tocco chiaro</string>
+    <string name="bell_name_deep_bowl">Campana profonda</string>
+    <string name="bell_name_low_bowl">Ciotola grave</string>
+    <string name="bell_name_natural_bowl">Ciotola naturale</string>
+</resources>

@@ -8,7 +8,7 @@ import java.time.Instant
 private const val KEY_PENDING_SESSIONS = "pending_watch_sessions"
 private val watchSyncLock = Any()
 
-fun savePendingSessionOnWatch(context: Context, raw: String) {
+private fun savePendingSessionOnWatch(context: Context, raw: String) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     synchronized(watchSyncLock) {
         val existingList = prefs.getStringSet(KEY_PENDING_SESSIONS, emptySet())?.toMutableList() ?: mutableListOf()
@@ -43,7 +43,7 @@ private fun removePendingSessionOnWatch(context: Context, raw: String) {
     }
 }
 
-fun flushPendingSessionsToPhone(context: Context) {
+internal fun flushPendingSessionsToPhone(context: Context) {
     val appContext = context.applicationContext ?: context
     try {
         val pendingSnapshot = synchronized(watchSyncLock) {
@@ -80,12 +80,11 @@ fun flushPendingSessionsToPhone(context: Context) {
                 }
             }
         }
-    } catch (e: Exception) {
-        e.printStackTrace()
+    } catch (_: Exception) {
     }
 }
 
-fun sendSessionToPhone(
+internal fun sendSessionToPhone(
     context: Context,
     durationSec: Int,
     startInstant: Instant,
@@ -128,7 +127,6 @@ fun sendSessionToPhone(
         dataClient.putDataItem(putDataReq).addOnSuccessListener {
             removePendingSessionOnWatch(appContext, raw)
         }
-    } catch (e: Exception) {
-        e.printStackTrace()
+    } catch (_: Exception) {
     }
 }

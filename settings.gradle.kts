@@ -23,5 +23,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Still"
+include(":core")
 include(":app")
 include(":wear")

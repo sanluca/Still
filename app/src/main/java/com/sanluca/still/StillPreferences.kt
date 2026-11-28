@@ -1,6 +1,9 @@
 package com.sanluca.still
 
 import android.content.Context
+import com.sanluca.still.core.ALERT_MODE_BOTH
+import com.sanluca.still.core.BellSound
+import com.sanluca.still.core.TINGSHA_FREQ_HZ
 import com.sanluca.still.ui.theme.StillColorPalette
 
 // --- FUNZIONI DI SALVATAGGIO DELLE IMPOSTAZIONI E STORICO ---
@@ -20,37 +23,33 @@ private const val KEY_AMBIENT_SOUND = "ambient_soundscape"
 private const val KEY_AMBIENT_VOLUME = "ambient_volume_percent"
 private const val KEY_CUSTOM_AMBIENT_URI = "custom_ambient_uri"
 private const val KEY_CUSTOM_AMBIENT_NAME = "custom_ambient_name"
+private const val KEY_LAST_SEEN_VERSION_CODE = "last_seen_version_code"
 internal const val KEY_SESSION_HISTORY = "session_history_list"
 internal const val KEY_PENDING_HEALTH_SESSIONS = "pending_health_sessions"
 
-const val TIMER_STYLE_ESSENTIAL = 3
+internal const val TIMER_STYLE_ESSENTIAL = 3
 
-fun saveSelectedTime(context: Context, timeInSeconds: Int) {
+internal fun saveSelectedTime(context: Context, timeInSeconds: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_SELECTED_TIME, timeInSeconds).apply()
 }
 
-fun getSavedSelectedTime(context: Context): Int {
+internal fun getSavedSelectedTime(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_SELECTED_TIME, 600) // Default 10 minuti (600s)
 }
 
 internal fun normalizeBellFrequency(rawFreq: Double, defaultFreq: Double): Double {
-    return when {
-        rawFreq > 2500.0 -> TINGSHA_FREQ_HZ
-        rawFreq in 215.0..217.0 -> 216.0
-        rawFreq in 431.0..433.0 -> 432.0
-        rawFreq in 527.0..529.0 -> 528.0
-        else -> normalizeSoftBellFrequency(rawFreq) ?: defaultFreq
-    }
+    val defaultBell = BellSound.fromCode(defaultFreq)
+    return BellSound.fromCode(rawFreq, defaultBell).code
 }
 
-fun saveGongFrequency(context: Context, freqHz: Double) {
+internal fun saveGongFrequency(context: Context, freqHz: Double) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putFloat(KEY_GONG_FREQ, freqHz.toFloat()).apply()
 }
 
-fun getSavedGongFrequency(context: Context): Double {
+internal fun getSavedGongFrequency(context: Context): Double {
     return try {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val raw = prefs.getFloat(KEY_GONG_FREQ, 432.0f).toDouble()
@@ -60,12 +59,12 @@ fun getSavedGongFrequency(context: Context): Double {
     }
 }
 
-fun saveIntervalGongFrequency(context: Context, freqHz: Double) {
+internal fun saveIntervalGongFrequency(context: Context, freqHz: Double) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putFloat(KEY_INTERVAL_GONG_FREQ, freqHz.toFloat()).apply()
 }
 
-fun getSavedIntervalGongFrequency(context: Context): Double {
+internal fun getSavedIntervalGongFrequency(context: Context): Double {
     return try {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (!prefs.contains(KEY_INTERVAL_GONG_FREQ)) {
@@ -79,107 +78,107 @@ fun getSavedIntervalGongFrequency(context: Context): Double {
     }
 }
 
-fun saveGongVolume(context: Context, volumePercent: Int) {
+internal fun saveGongVolume(context: Context, volumePercent: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_GONG_VOLUME, volumePercent.coerceIn(20, 100)).apply()
 }
 
-fun getSavedGongVolume(context: Context): Int {
+internal fun getSavedGongVolume(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_GONG_VOLUME, 100).coerceIn(20, 100)
 }
 
-fun saveAlertMode(context: Context, mode: Int) {
+internal fun saveAlertMode(context: Context, mode: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_ALERT_MODE, mode).apply()
 }
 
-fun getSavedAlertMode(context: Context): Int {
+internal fun getSavedAlertMode(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_ALERT_MODE, ALERT_MODE_BOTH)
 }
 
-fun saveIntervalMins(context: Context, mins: Int) {
+internal fun saveIntervalMins(context: Context, mins: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_INTERVAL_MINS, mins).apply()
 }
 
-fun getSavedIntervalMins(context: Context): Int {
+internal fun getSavedIntervalMins(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_INTERVAL_MINS, 0)
 }
 
-fun saveAutoDnd(context: Context, enabled: Boolean) {
+internal fun saveAutoDnd(context: Context, enabled: Boolean) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putBoolean(KEY_AUTO_DND, enabled).apply()
 }
 
-fun getSavedAutoDnd(context: Context): Boolean {
+internal fun getSavedAutoDnd(context: Context): Boolean {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getBoolean(KEY_AUTO_DND, true)
 }
 
-fun saveTimerStyle(context: Context, style: Int) {
+internal fun saveTimerStyle(context: Context, style: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_TIMER_STYLE, style).apply()
 }
 
-fun getSavedTimerStyle(context: Context): Int {
+internal fun getSavedTimerStyle(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_TIMER_STYLE, TIMER_STYLE_ESSENTIAL)
 }
 
-fun saveColorPalette(context: Context, palette: StillColorPalette) {
+internal fun saveColorPalette(context: Context, palette: StillColorPalette) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putString(KEY_COLOR_PALETTE, palette.id).apply()
 }
 
-fun getSavedColorPalette(context: Context): StillColorPalette {
+internal fun getSavedColorPalette(context: Context): StillColorPalette {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return StillColorPalette.fromId(prefs.getString(KEY_COLOR_PALETTE, StillColorPalette.AUTUMN.id))
 }
 
-fun savePrepTime(context: Context, prepSeconds: Int) {
+internal fun savePrepTime(context: Context, prepSeconds: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_PREP_TIME, prepSeconds).apply()
 }
 
-fun getSavedPrepTime(context: Context): Int {
+internal fun getSavedPrepTime(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_PREP_TIME, 0)
 }
 
-fun saveHealthConnectedState(context: Context, isConnected: Boolean) {
+internal fun saveHealthConnectedState(context: Context, isConnected: Boolean) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putBoolean(KEY_HEALTH_CONNECTED, isConnected).apply()
 }
 
-fun isHealthConnectedStateSaved(context: Context): Boolean {
+internal fun isHealthConnectedStateSaved(context: Context): Boolean {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getBoolean(KEY_HEALTH_CONNECTED, false)
 }
 
-fun saveAmbientSoundscape(context: Context, soundscape: AmbientSoundscape) {
+internal fun saveAmbientSoundscape(context: Context, soundscape: AmbientSoundscape) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putString(KEY_AMBIENT_SOUND, soundscape.id).apply()
 }
 
-fun getSavedAmbientSoundscape(context: Context): AmbientSoundscape {
+internal fun getSavedAmbientSoundscape(context: Context): AmbientSoundscape {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return AmbientSoundscape.fromId(prefs.getString(KEY_AMBIENT_SOUND, AmbientSoundscape.OFF.id))
 }
 
-fun saveAmbientVolume(context: Context, volumePercent: Int) {
+internal fun saveAmbientVolume(context: Context, volumePercent: Int) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit().putInt(KEY_AMBIENT_VOLUME, volumePercent.coerceIn(10, 100)).apply()
 }
 
-fun getSavedAmbientVolume(context: Context): Int {
+internal fun getSavedAmbientVolume(context: Context): Int {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getInt(KEY_AMBIENT_VOLUME, 50).coerceIn(10, 100)
 }
 
-fun saveCustomAmbientAudio(context: Context, uri: String, displayName: String) {
+internal fun saveCustomAmbientAudio(context: Context, uri: String, displayName: String) {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     prefs.edit()
         .putString(KEY_CUSTOM_AMBIENT_URI, uri)
@@ -187,12 +186,22 @@ fun saveCustomAmbientAudio(context: Context, uri: String, displayName: String) {
         .apply()
 }
 
-fun getSavedCustomAmbientUri(context: Context): String? {
+internal fun getSavedCustomAmbientUri(context: Context): String? {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getString(KEY_CUSTOM_AMBIENT_URI, null)?.takeIf { it.isNotBlank() }
 }
 
-fun getSavedCustomAmbientName(context: Context): String? {
+internal fun getSavedCustomAmbientName(context: Context): String? {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     return prefs.getString(KEY_CUSTOM_AMBIENT_NAME, null)?.takeIf { it.isNotBlank() }
+}
+
+internal fun getLastSeenVersionCode(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt(KEY_LAST_SEEN_VERSION_CODE, -1)
+}
+
+internal fun saveLastSeenVersionCode(context: Context, versionCode: Int) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    prefs.edit().putInt(KEY_LAST_SEEN_VERSION_CODE, versionCode).apply()
 }

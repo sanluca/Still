@@ -4,9 +4,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
 import com.sanluca.still.wear.R
 
-val OvertimeGold = Color(0xFFFFCA58)
+internal val OvertimeGold = Color(0xFFFFCA58)
 
-enum class StillColorPalette(val id: String, val labelRes: Int, val swatchColor: Color) {
+internal enum class StillColorPalette(val id: String, val labelRes: Int, val swatchColor: Color) {
     SPRING("spring", R.string.theme_spring, Color(0xFFF596AA)),
     SUMMER("summer", R.string.theme_summer, Color(0xFFE85D75)),
     AUTUMN("autumn", R.string.theme_autumn, Color(0xFF6A994E)),
@@ -23,7 +23,7 @@ enum class StillColorPalette(val id: String, val labelRes: Int, val swatchColor:
 }
 
 // 1. PRIMAVERA (Verde Germoglio, Rosa Ciliegio, Giallo Polline)
-val SpringColorScheme = darkColorScheme(
+internal val SpringColorScheme = darkColorScheme(
     primary = Color(0xFF64A348),            // Verde Germoglio Moegi Vivo
     onPrimary = Color(0xFF071F03),
     primaryContainer = Color(0xFF1E3F24),
@@ -45,7 +45,7 @@ val SpringColorScheme = darkColorScheme(
 )
 
 // 2. ESTATE (Rosa-Corallo Ibisco, Verde Palma, Turchese Laguna, Giallo Sole)
-val SummerColorScheme = darkColorScheme(
+internal val SummerColorScheme = darkColorScheme(
     primary = Color(0xFFE85D75),            // Rosa-Corallo Ibisco
     onPrimary = Color(0xFF28050C),
     primaryContainer = Color(0xFF143C4C),
@@ -67,7 +67,7 @@ val SummerColorScheme = darkColorScheme(
 )
 
 // 3. AUTUNNO (Verde Muschio del Bosco, Viola Prugna, Ambra Calda)
-val DarkWarmColorScheme = darkColorScheme(
+internal val DarkWarmColorScheme = darkColorScheme(
     primary = Color(0xFF6A994E),            // Verde Muschio del Bosco
     onPrimary = Color(0xFF091F03),
     primaryContainer = Color(0xFF23381B),
@@ -89,7 +89,7 @@ val DarkWarmColorScheme = darkColorScheme(
 )
 
 // 4. INVERNO (Rosso Camelia/Camino, Verde Abete, Ciano Ghiaccio)
-val WinterColorScheme = darkColorScheme(
+internal val WinterColorScheme = darkColorScheme(
     primary = Color(0xFFE06D53),            // Rosso Camelia / Calore Camino
     onPrimary = Color(0xFF290902),
     primaryContainer = Color(0xFF1B354D),

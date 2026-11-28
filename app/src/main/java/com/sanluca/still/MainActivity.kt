@@ -1,59 +1,60 @@
 package com.sanluca.still
 
-import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
+import android.content.SharedPreferences
 import android.os.Bundle
-import android.util.Log
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.keepScreenOn
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.keepScreenOn
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
-import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -65,24 +66,26 @@ import com.google.android.play.core.install.InstallStateUpdatedListener
 import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.InstallStatus
 import com.google.android.play.core.install.model.UpdateAvailability
+import com.sanluca.still.ui.theme.LocalStillColors
 import com.sanluca.still.ui.theme.StillColorPalette
 import com.sanluca.still.ui.theme.StillTheme
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.time.Instant
 import java.time.LocalDate
-import java.util.Locale
 
-fun Context.findActivity(): Activity? = when (this) {
+private fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
 }
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private var hasShownOpeningQuoteInProcess = false
+    }
+
     private val showHealthRationaleState = mutableStateOf(false)
+    private val showOpeningQuoteState = mutableStateOf(false)
     private val isUpdateDownloadedState = mutableStateOf(false)
     private lateinit var appUpdateManager: AppUpdateManager
     private var hasCheckedUpdate = false
@@ -99,7 +102,19 @@ class MainActivity : ComponentActivity() {
         if (!StillTimerService.isRunning) {
             disableDoNotDisturb(this)
         }
-        showHealthRationaleState.value = checkIsHealthRationale(intent)
+        val isHealthRationaleIntent = checkIsHealthRationale(intent)
+        showHealthRationaleState.value = isHealthRationaleIntent
+        val isTimerActiveOrPaused = StillTimerService.isRunning ||
+            StillTimerService.timerState.value.isRunning ||
+            StillTimerService.timerState.value.isPaused
+        if (savedInstanceState == null &&
+            !hasShownOpeningQuoteInProcess &&
+            !isTimerActiveOrPaused &&
+            !isHealthRationaleIntent
+        ) {
+            hasShownOpeningQuoteInProcess = true
+            showOpeningQuoteState.value = true
+        }
         appUpdateManager = AppUpdateManagerFactory.create(this)
         appUpdateManager.registerListener(installStateUpdatedListener)
         enableEdgeToEdge(
@@ -111,6 +126,8 @@ class MainActivity : ComponentActivity() {
             var presetPaletteOverride by remember {
                 mutableStateOf(getActivePreset(this)?.effectiveColorPalette())
             }
+            var isWhatsNewVisible by remember { mutableStateOf(false) }
+            var isWhatsNewEvaluated by remember { mutableStateOf(false) }
             val effectivePalette = presetPaletteOverride ?: selectedPalette
             val snackbarHostState = remember { SnackbarHostState() }
             val updateReadyMsg = stringResource(R.string.update_ready_message)
@@ -121,8 +138,19 @@ class MainActivity : ComponentActivity() {
                 // Se l'utente rifiuta o annulla, non riproponiamo nello stesso avvio
             }
 
-            LaunchedEffect(Unit) {
-                checkForPlayStoreUpdate(updateLauncher)
+            LaunchedEffect(
+                showOpeningQuoteState.value,
+                showHealthRationaleState.value,
+                isWhatsNewVisible,
+                isWhatsNewEvaluated
+            ) {
+                if (!showOpeningQuoteState.value &&
+                    !showHealthRationaleState.value &&
+                    isWhatsNewEvaluated &&
+                    !isWhatsNewVisible
+                ) {
+                    checkForPlayStoreUpdate(updateLauncher)
+                }
             }
 
             LaunchedEffect(isUpdateDownloadedState.value) {
@@ -141,23 +169,37 @@ class MainActivity : ComponentActivity() {
             }
 
             StillTheme(palette = effectivePalette) {
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
-                ) { innerPadding ->
-                    MeditationTimerScreen(
-                        modifier = Modifier.padding(innerPadding),
-                        selectedPalette = selectedPalette,
-                        onPaletteSelected = { newPalette ->
-                            selectedPalette = newPalette
-                            saveColorPalette(this, newPalette)
-                        },
-                        showHealthRationale = showHealthRationaleState.value,
-                        onDismissHealthRationale = { showHealthRationaleState.value = false },
-                        onPresetPaletteOverrideChange = { overridePalette ->
-                            presetPaletteOverride = overridePalette
-                        }
-                    )
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+                    ) { innerPadding ->
+                        MeditationTimerScreen(
+                            modifier = Modifier.padding(innerPadding),
+                            selectedPalette = selectedPalette,
+                            onPaletteSelected = { newPalette ->
+                                selectedPalette = newPalette
+                                saveColorPalette(this@MainActivity, newPalette)
+                            },
+                            showHealthRationale = showHealthRationaleState.value,
+                            onDismissHealthRationale = { showHealthRationaleState.value = false },
+                            onPresetPaletteOverrideChange = { overridePalette ->
+                                presetPaletteOverride = overridePalette
+                            },
+                            showOpeningQuote = showOpeningQuoteState.value,
+                            onDismissOpeningQuote = { showOpeningQuoteState.value = false },
+                            onWhatsNewStateChange = { visible, evaluated ->
+                                isWhatsNewVisible = visible
+                                isWhatsNewEvaluated = evaluated
+                            }
+                        )
+                    }
+
+                    if (showOpeningQuoteState.value) {
+                        StillOpeningQuoteOverlay(
+                            onDismiss = { showOpeningQuoteState.value = false }
+                        )
+                    }
                 }
             }
         }
@@ -176,7 +218,13 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (checkIsHealthRationale(intent)) {
+            showOpeningQuoteState.value = false
             showHealthRationaleState.value = true
+        } else if (StillTimerService.isRunning ||
+            StillTimerService.timerState.value.isRunning ||
+            StillTimerService.timerState.value.isPaused
+        ) {
+            showOpeningQuoteState.value = false
         }
     }
 
@@ -219,92 +267,140 @@ class MainActivity : ComponentActivity() {
         if (intent == null) return false
         val action = intent.action ?: return false
         return action == "androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" ||
-               (action == "android.intent.action.VIEW_PERMISSION_USAGE" &&
+            (action == "android.intent.action.VIEW_PERMISSION_USAGE" &&
                 (intent.hasCategory("android.intent.category.HEALTH_PERMISSIONS") ||
-                 intent.categories?.contains("android.intent.category.HEALTH_PERMISSIONS") == true))
+                    intent.categories?.contains("android.intent.category.HEALTH_PERMISSIONS") == true))
     }
 }
 
 @Composable
-fun MeditationTimerScreen(
+private fun MeditationTimerScreen(
     modifier: Modifier = Modifier,
     selectedPalette: StillColorPalette = StillColorPalette.AUTUMN,
     onPaletteSelected: (StillColorPalette) -> Unit = {},
     showHealthRationale: Boolean = false,
     onDismissHealthRationale: () -> Unit = {},
-    onPresetPaletteOverrideChange: (StillColorPalette?) -> Unit = {}
+    onPresetPaletteOverrideChange: (StillColorPalette?) -> Unit = {},
+    showOpeningQuote: Boolean = false,
+    onDismissOpeningQuote: () -> Unit = {},
+    onWhatsNewStateChange: (Boolean, Boolean) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
-    val appContext = context.applicationContext ?: context
-    val coroutineScope = rememberCoroutineScope()
-    
-    var showPrivacyDialog by remember { mutableStateOf(showHealthRationale) }
+    val stateHolder = rememberStillScreenStateHolder(
+        context = context,
+        initialShowHealthRationale = showHealthRationale
+    )
+    val serviceState by StillTimerService.timerState.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentView = LocalView.current
+    val isCompactHeight = LocalConfiguration.current.screenHeightDp < 640
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        stateHolder.isNotificationPromptInFlight = false
+    }
+
+    val exportHistoryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        stateHolder.exportHistoryToUri(uri)
+    }
+
+    val importHistoryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        stateHolder.importHistoryFromUri(uri)
+    }
+
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        contract = PermissionController.createRequestPermissionResultContract()
+    ) { grantedPermissions ->
+        stateHolder.onHealthPermissionsResult(grantedPermissions)
+    }
+
+    val pickCustomAudioLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        stateHolder.handlePickedCustomAudio(uri)
+    }
 
     LaunchedEffect(showHealthRationale) {
         if (showHealthRationale) {
-            showPrivacyDialog = true
-        }
-    }
-    
-    val healthConnectManager = remember { HealthConnectManager(context) }
-    var isHealthConnected by remember { mutableStateOf(isHealthConnectedStateSaved(context)) }
-
-    LaunchedEffect(Unit) {
-        if (healthConnectManager.hasAllPermissions()) {
-            isHealthConnected = true
-            saveHealthConnectedState(context, true)
-            syncPendingSessionsToHealthConnect(context, healthConnectManager)
+            stateHolder.showPrivacyDialog = true
         }
     }
 
-    var showSettingsDialog by remember { mutableStateOf(false) }
-    var showPresetPickerDialog by remember { mutableStateOf(false) }
-    var showPresetManagerDialog by remember { mutableStateOf(false) }
-    var showReminderDialog by remember { mutableStateOf(false) }
-    var reminderSettings by remember { mutableStateOf(getSavedReminderSettings(context)) }
-    var presets by remember { mutableStateOf(getSavedPresets(context)) }
-    var activePresetId by remember { mutableStateOf(getActivePresetId(context)) }
-    val activePreset = remember(presets, activePresetId) {
-        presets.firstOrNull { it.id == activePresetId }
-    }
-    LaunchedEffect(activePreset) {
-        onPresetPaletteOverrideChange(activePreset?.effectiveColorPalette())
-    }
-    LaunchedEffect(Unit) {
-        if (reminderSettings.enabled) {
+    LaunchedEffect(stateHolder) {
+        stateHolder.checkInitialHealthConnection()
+        if (stateHolder.reminderSettings.enabled) {
             scheduleMeditationReminder(
                 context,
-                reminderSettings,
+                stateHolder.reminderSettings,
                 afterTrigger = false,
                 preserveExistingFuture = true
             )
         }
     }
 
-    var isResyncing by remember { mutableStateOf(false) }
-    var showStatsDialog by remember { mutableStateOf(false) }
-    var selectedCalendarDate by remember { mutableStateOf<LocalDate?>(null) }
-    var sessionToDelete by remember { mutableStateOf<SessionLogEntry?>(null) }
-    
-    var sessionHistoryList by remember { mutableStateOf(getLocalSessionHistory(context)) }
-    var dndGranted by remember { mutableStateOf(isDndPermissionGranted(context)) }
+    LaunchedEffect(stateHolder.activePreset) {
+        onPresetPaletteOverrideChange(stateHolder.activePreset?.effectiveColorPalette())
+    }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    LaunchedEffect(serviceState) {
+        stateHolder.syncFromServiceState(serviceState)
+    }
+
+    LaunchedEffect(stateHolder.selectedTimeInSeconds) {
+        stateHolder.syncIdleTimeWhenSelectedTimeChanges()
+    }
+
+    LaunchedEffect(stateHolder.showWhatsNewDialog, stateHolder.hasEvaluatedWhatsNew) {
+        onWhatsNewStateChange(stateHolder.showWhatsNewDialog, stateHolder.hasEvaluatedWhatsNew)
+    }
+
+    LaunchedEffect(
+        showOpeningQuote,
+        stateHolder.isTimerRunning,
+        stateHolder.isOvertime,
+        stateHolder.showPrivacyDialog
+    ) {
+        if (showOpeningQuote && (stateHolder.isTimerRunning || stateHolder.isOvertime || stateHolder.showPrivacyDialog)) {
+            onDismissOpeningQuote()
+        }
+    }
+
+    val isServiceSessionActive = serviceState.isRunning || serviceState.isPaused || stateHolder.sessionStartTime != null
+
+    LaunchedEffect(
+        showOpeningQuote,
+        stateHolder.showPrivacyDialog,
+        stateHolder.isTimerRunning,
+        stateHolder.isOvertime,
+        isServiceSessionActive,
+        stateHolder.isNotificationPromptInFlight
+    ) {
+        if (stateHolder.hasEvaluatedWhatsNew) return@LaunchedEffect
+        if (showOpeningQuote ||
+            stateHolder.showPrivacyDialog ||
+            stateHolder.isTimerRunning ||
+            stateHolder.isOvertime ||
+            isServiceSessionActive ||
+            stateHolder.isNotificationPromptInFlight
+        ) {
+            return@LaunchedEffect
+        }
+        delay(120L)
+        stateHolder.hasEvaluatedWhatsNew = true
+        if (getLastSeenVersionCode(context) < BuildConfig.VERSION_CODE) {
+            stateHolder.showWhatsNewDialog = true
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, stateHolder) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                sessionHistoryList = getLocalSessionHistory(context)
-                dndGranted = isDndPermissionGranted(context)
-                coroutineScope.launch {
-                    if (healthConnectManager.hasAllPermissions()) {
-                        isHealthConnected = true
-                        saveHealthConnectedState(context, true)
-                        syncPendingSessionsToHealthConnect(context, healthConnectManager)
-                    } else {
-                        isHealthConnected = false
-                        saveHealthConnectedState(context, false)
-                    }
-                }
+                stateHolder.refreshOnResume()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -314,20 +410,13 @@ fun MeditationTimerScreen(
     }
 
     // Aggiornamento live: sessioni in arrivo dall'orologio (WearListenerService) mentre l'app è aperta
-    DisposableEffect(context, lifecycleOwner) {
+    DisposableEffect(context, lifecycleOwner, stateHolder) {
         val livePrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == KEY_SESSION_HISTORY) {
-                sessionHistoryList = getLocalSessionHistory(context)
-            } else if (key == KEY_PENDING_HEALTH_SESSIONS &&
-                lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-            ) {
-                coroutineScope.launch {
-                    if (healthConnectManager.hasAllPermissions()) {
-                        syncPendingSessionsToHealthConnect(context, healthConnectManager)
-                    }
-                }
-            }
+        val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            stateHolder.onSharedPreferenceChanged(
+                key = key,
+                isLifecycleStarted = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            )
         }
         livePrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         onDispose {
@@ -335,417 +424,10 @@ fun MeditationTimerScreen(
         }
     }
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { _ -> }
-
-    val exportHistoryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        coroutineScope.launch(Dispatchers.IO) {
-            try {
-                val csv = exportSessionHistoryToCsv(appContext)
-                val exportedCount = getLocalSessionHistory(appContext).size
-                val outputStream = appContext.contentResolver.openOutputStream(uri)
-                    ?: throw IllegalStateException("Cannot open output stream for $uri")
-                outputStream.use { stream ->
-                    stream.write(csv.toByteArray(Charsets.UTF_8))
-                    stream.flush()
-                }
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        appContext,
-                        appContext.getString(R.string.toast_backup_export_success, exportedCount),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-            } catch (_: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        appContext,
-                        appContext.getString(R.string.toast_backup_export_error),
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        }
-    }
-
-    val importHistoryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        coroutineScope.launch(Dispatchers.IO) {
-            try {
-                val csvContent = appContext.contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.bufferedReader(Charsets.UTF_8).readText()
-                } ?: throw IllegalStateException("Cannot open input stream for $uri")
-
-                val result = importSessionHistoryFromCsv(appContext, csvContent)
-                val updatedHistory = getLocalSessionHistory(appContext)
-                withContext(Dispatchers.Main) {
-                    sessionHistoryList = updatedHistory
-                    val msg = if (result.importedCount > 0) {
-                        appContext.getString(
-                            R.string.toast_backup_import_success,
-                            result.importedCount,
-                            result.skippedDuplicates
-                        )
-                    } else {
-                        appContext.getString(
-                            R.string.toast_backup_import_none,
-                            result.skippedDuplicates
-                        )
-                    }
-                    Toast.makeText(appContext, msg, Toast.LENGTH_LONG).show()
-                }
-            } catch (_: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        appContext,
-                        appContext.getString(R.string.toast_backup_import_error),
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        }
-    }
-
-    val toastHealthConnectedMsg = stringResource(R.string.toast_health_connected)
-    val toastHealthDeniedMsg = stringResource(R.string.toast_health_permission_denied)
-    val toastHealthInstallMsg = stringResource(R.string.toast_health_install)
-    val toastHealthUnsupportedMsg = stringResource(R.string.toast_health_unsupported)
-
-    val requestPermissionLauncher = rememberLauncherForActivityResult(
-        contract = PermissionController.createRequestPermissionResultContract()
-    ) { grantedPermissions ->
-        if (grantedPermissions.containsAll(healthConnectManager.permissions)) {
-            isHealthConnected = true
-            saveHealthConnectedState(context, true)
-            coroutineScope.launch {
-                syncPendingSessionsToHealthConnect(context, healthConnectManager)
-            }
-            Toast.makeText(context, toastHealthConnectedMsg, Toast.LENGTH_SHORT).show()
-        } else {
-            isHealthConnected = false
-            saveHealthConnectedState(context, false)
-            Toast.makeText(context, toastHealthDeniedMsg, Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun openHealthConnectInPlayStore() {
-        try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.apps.healthdata"))
-            context.startActivity(intent)
-        } catch (_: Exception) {
-            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.apps.healthdata"))
-            context.startActivity(webIntent)
-        }
-    }
-
-    fun connectToHealth() {
-        when (healthConnectManager.getHealthConnectStatus()) {
-            HealthConnectClient.SDK_AVAILABLE -> {
-                requestPermissionLauncher.launch(healthConnectManager.permissions)
-            }
-            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
-                Toast.makeText(
-                    context,
-                    toastHealthInstallMsg,
-                    Toast.LENGTH_LONG
-                ).show()
-                openHealthConnectInPlayStore()
-            }
-            else -> {
-                Toast.makeText(
-                    context,
-                    toastHealthUnsupportedMsg,
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-    }
-
-    val serviceState by StillTimerService.timerState.collectAsState()
-    val initialServiceSnapshot = remember { StillTimerService.timerState.value }
-    val hasActiveServiceSession = initialServiceSnapshot.isRunning || initialServiceSnapshot.isPaused
-
-    var selectedTimeInSeconds by remember {
-        mutableIntStateOf(
-            if (hasActiveServiceSession) initialServiceSnapshot.selectedTimeSeconds
-            else activePreset?.durationSeconds ?: getSavedSelectedTime(context)
-        )
-    }
-    var activeSessionPlannedSeconds by remember {
-        mutableIntStateOf(
-            if (hasActiveServiceSession) initialServiceSnapshot.activeSessionPlannedSeconds
-            else selectedTimeInSeconds
-        )
-    }
-    var lastTimedSeconds by remember {
-        mutableIntStateOf(
-            if (selectedTimeInSeconds > 0) selectedTimeInSeconds
-            else getSavedSelectedTime(context).takeIf { it > 0 } ?: 600
-        )
-    }
-    
-    var prepTimeSeconds by remember { mutableIntStateOf(getSavedPrepTime(context)) }
-    var gongFreqHz by remember { mutableDoubleStateOf(getSavedGongFrequency(context)) }
-    var intervalGongFreqHz by remember { mutableDoubleStateOf(getSavedIntervalGongFrequency(context)) }
-    var gongVolumePercent by remember { mutableIntStateOf(getSavedGongVolume(context)) }
-    var alertMode by remember { mutableIntStateOf(getSavedAlertMode(context)) }
-    var intervalMins by remember { mutableIntStateOf(getSavedIntervalMins(context)) }
-    var autoDndEnabled by remember { mutableStateOf(getSavedAutoDnd(context)) }
-    var timerStyle by remember { mutableIntStateOf(getSavedTimerStyle(context)) }
-    var ambientSoundscape by remember { mutableStateOf(getSavedAmbientSoundscape(context)) }
-    var ambientVolumePercent by remember { mutableIntStateOf(getSavedAmbientVolume(context)) }
-    var customAmbientUri by remember { mutableStateOf(getSavedCustomAmbientUri(context)) }
-    var customAmbientName by remember { mutableStateOf(getSavedCustomAmbientName(context)) }
-
-    val effectivePrepSeconds = activePreset?.prepSeconds ?: prepTimeSeconds
-    val effectiveGongFreqHz = activePreset?.gongFreqHz ?: gongFreqHz
-    val effectiveIntervalGongFreqHz = activePreset?.intervalGongFreqHz ?: intervalGongFreqHz
-    val effectiveGongVolumePercent = activePreset?.gongVolumePercent ?: gongVolumePercent
-    val effectiveAlertMode = activePreset?.alertMode ?: alertMode
-    val effectiveIntervalMins = activePreset?.intervalMins ?: intervalMins
-    val effectiveAutoDndEnabled = activePreset?.autoDndEnabled ?: autoDndEnabled
-    val effectiveTimerStyle = activePreset?.timerStyle ?: timerStyle
-    val effectiveAmbientSoundscape = activePreset?.effectiveAmbientSoundscape() ?: ambientSoundscape
-    val effectiveAmbientVolumePercent = activePreset?.ambientVolumePercent ?: ambientVolumePercent
-    val effectiveCustomAmbientUri = if (activePreset?.ambientSoundId != null) {
-        if (effectiveAmbientSoundscape == AmbientSoundscape.CUSTOM) {
-            activePreset.customAmbientUri ?: customAmbientUri
-        } else {
-            null
-        }
-    } else {
-        customAmbientUri
-    }
-
-    var isPreparing by remember {
-        mutableStateOf(hasActiveServiceSession && initialServiceSnapshot.isPreparing)
-    }
-    var prepTimeLeftSeconds by remember {
-        mutableIntStateOf(if (hasActiveServiceSession) initialServiceSnapshot.prepLeftSeconds else 0)
-    }
-
-    var timeLeftInSeconds by remember {
-        mutableIntStateOf(
-            if (hasActiveServiceSession) initialServiceSnapshot.timeLeftSeconds
-            else if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
-        )
-    }
-    
-    var isOvertime by remember {
-        mutableStateOf(hasActiveServiceSession && initialServiceSnapshot.isOvertime)
-    }
-    var overtimeSeconds by remember {
-        mutableIntStateOf(if (hasActiveServiceSession) initialServiceSnapshot.overtimeSeconds else 0)
-    }
-
-    var isTimerRunning by remember {
-        mutableStateOf(initialServiceSnapshot.isRunning)
-    }
-    var hasStartedFromUi by remember {
-        mutableStateOf(hasActiveServiceSession)
-    }
-    var hideTimerNumbers by remember { mutableStateOf(false) }
-
-    var sessionStartTime by remember {
-        mutableStateOf(initialServiceSnapshot.sessionStartEpochMilli?.let { Instant.ofEpochMilli(it) })
-    }
-
-    LaunchedEffect(serviceState) {
-        if (serviceState.isRunning || serviceState.isPaused) {
-            isTimerRunning = serviceState.isRunning
-            hasStartedFromUi = true
-            isPreparing = serviceState.isPreparing
-            prepTimeLeftSeconds = serviceState.prepLeftSeconds
-            activeSessionPlannedSeconds = serviceState.activeSessionPlannedSeconds
-            timeLeftInSeconds = serviceState.timeLeftSeconds
-            isOvertime = serviceState.isOvertime
-            overtimeSeconds = serviceState.overtimeSeconds
-            sessionStartTime = serviceState.sessionStartEpochMilli?.let { Instant.ofEpochMilli(it) }
-        } else if (hasStartedFromUi && isTimerRunning) {
-            Log.d("StillApp", "Riallineamento UI: StillTimerService non più attivo")
-            isTimerRunning = false
-            isPreparing = false
-            prepTimeLeftSeconds = 0
-        }
-    }
-
-    fun startOrResumeTimer() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-
-        val isResuming = sessionStartTime != null
-        val intent = if (!isResuming) {
-            Intent(context, StillTimerService::class.java).apply {
-                action = "START"
-                putExtra("FREQ", effectiveGongFreqHz)
-                putExtra("INTERVAL_FREQ", effectiveIntervalGongFreqHz)
-                putExtra("VOLUME", effectiveGongVolumePercent)
-                putExtra("ALERT_MODE", effectiveAlertMode)
-                putExtra("INTERVAL", effectiveIntervalMins)
-                putExtra("TIME", selectedTimeInSeconds)
-                putExtra("PLANNED_TIME", selectedTimeInSeconds)
-                putExtra("SELECTED_TIME", selectedTimeInSeconds)
-                putExtra("PREP", effectivePrepSeconds)
-                putExtra("DND", effectiveAutoDndEnabled)
-                putExtra("AMBIENT_SOUND", effectiveAmbientSoundscape.id)
-                putExtra("AMBIENT_VOLUME", effectiveAmbientVolumePercent)
-                putExtra("AMBIENT_CUSTOM_URI", effectiveCustomAmbientUri)
-            }
-        } else {
-            val elapsedBeforePause = if (activeSessionPlannedSeconds == -1) {
-                timeLeftInSeconds
-            } else {
-                (activeSessionPlannedSeconds - timeLeftInSeconds).coerceAtLeast(0)
-            }
-            Intent(context, StillTimerService::class.java).apply {
-                action = "START"
-                putExtra("RESUME", true)
-                putExtra("ELAPSED_OFFSET", elapsedBeforePause)
-                putExtra("FREQ", effectiveGongFreqHz)
-                putExtra("INTERVAL_FREQ", effectiveIntervalGongFreqHz)
-                putExtra("VOLUME", effectiveGongVolumePercent)
-                putExtra("ALERT_MODE", effectiveAlertMode)
-                putExtra("INTERVAL", effectiveIntervalMins)
-                putExtra("TIME", if (activeSessionPlannedSeconds == -1) -1 else timeLeftInSeconds)
-                putExtra("PLANNED_TIME", activeSessionPlannedSeconds)
-                putExtra("SELECTED_TIME", selectedTimeInSeconds)
-                putExtra("DND", effectiveAutoDndEnabled)
-                putExtra("AMBIENT_SOUND", effectiveAmbientSoundscape.id)
-                putExtra("AMBIENT_VOLUME", effectiveAmbientVolumePercent)
-                putExtra("AMBIENT_CUSTOM_URI", effectiveCustomAmbientUri)
-            }
-        }
-
-        try {
-            hasStartedFromUi = true
-            isTimerRunning = true
-            if (!isResuming && effectivePrepSeconds > 0) {
-                isPreparing = true
-                prepTimeLeftSeconds = effectivePrepSeconds
-            }
-            context.startForegroundService(intent)
-        } catch (_: Exception) {
-            isTimerRunning = false
-            isPreparing = false
-        }
-    }
-
-    fun pauseActiveTimer() {
-        isTimerRunning = false
-        isPreparing = false
-        if (StillTimerService.isRunning) {
-            val pauseIntent = Intent(context, StillTimerService::class.java).apply {
-                action = "PAUSE"
-            }
-            context.startService(pauseIntent)
-        }
-    }
-
-    fun sendAmbientUpdateToService(
-        sound: AmbientSoundscape,
-        volume: Int,
-        customUri: String? = customAmbientUri
-    ) {
-        if (StillTimerService.isRunning) {
-            val updateIntent = Intent(context, StillTimerService::class.java).apply {
-                action = "UPDATE_AMBIENT"
-                putExtra("AMBIENT_SOUND", sound.id)
-                putExtra("AMBIENT_VOLUME", volume)
-                putExtra("AMBIENT_CUSTOM_URI", customUri)
-            }
-            context.startService(updateIntent)
-        }
-    }
-
-    val pickCustomAudioLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val displayName = resolveAudioDisplayName(appContext, uri)
-            ?: appContext.getString(R.string.ambient_sound_custom)
-        if (!isSupportedCustomAudio(appContext, uri, displayName)) {
-            Toast.makeText(
-                appContext,
-                appContext.getString(R.string.toast_custom_audio_unsupported),
-                Toast.LENGTH_LONG
-            ).show()
-            return@rememberLauncherForActivityResult
-        }
-        try {
-            appContext.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        } catch (_: Exception) {
-        }
-        val uriString = uri.toString()
-        saveCustomAmbientAudio(appContext, uriString, displayName)
-        customAmbientUri = uriString
-        customAmbientName = displayName
-        ambientSoundscape = AmbientSoundscape.CUSTOM
-        saveAmbientSoundscape(appContext, AmbientSoundscape.CUSTOM)
-        if (activePreset?.ambientSoundId == null) {
-            sendAmbientUpdateToService(AmbientSoundscape.CUSTOM, effectiveAmbientVolumePercent, uriString)
-        }
-    }
-
-    fun updateTimeSelection(newTime: Int) {
-        if (newTime > 0) {
-            lastTimedSeconds = newTime
-        }
-        selectedTimeInSeconds = newTime
-        activeSessionPlannedSeconds = newTime
-        timeLeftInSeconds = if (newTime == -1) 0 else newTime
-        isOvertime = false
-        overtimeSeconds = 0
-        sessionStartTime = null
-        if (activePreset == null) {
-            saveSelectedTime(context, newTime)
-        }
-    }
-
-    fun adjustActiveTimer(deltaSeconds: Int) {
-        if (activeSessionPlannedSeconds <= 0 || isOvertime || isPreparing) return
-        if (deltaSeconds < 0 && timeLeftInSeconds <= -deltaSeconds) return
-
-        activeSessionPlannedSeconds = (activeSessionPlannedSeconds + deltaSeconds).coerceAtLeast(1)
-        timeLeftInSeconds = (timeLeftInSeconds + deltaSeconds).coerceAtLeast(1)
-
-        if (isTimerRunning) {
-            if (StillTimerService.isRunning) {
-                val adjustIntent = Intent(context, StillTimerService::class.java).apply {
-                    action = "ADJUST_TIME"
-                    putExtra("DELTA_SECONDS", deltaSeconds)
-                }
-                context.startService(adjustIntent)
-            }
-        } else if (sessionStartTime != null) {
-            StillTimerService.adjustPausedState(deltaSeconds)
-        }
-    }
-
-    val progress = remember(timeLeftInSeconds, activeSessionPlannedSeconds) {
-        if (activeSessionPlannedSeconds > 0) {
-            (timeLeftInSeconds.toFloat() / activeSessionPlannedSeconds.toFloat()).coerceIn(0f, 1f)
-        } else {
-            1f
-        }
-    }
-
-    val currentView = LocalView.current
-    val keepScreenAwake = isTimerRunning || isOvertime
+    val keepScreenAwake = stateHolder.keepScreenAwake
 
     // Con timer attivo o in overtime il gesto/tasto Indietro non chiude per errore la sessione
-    BackHandler(enabled = isTimerRunning || isOvertime) { }
+    BackHandler(enabled = keepScreenAwake) { }
 
     // Triplo presidio per non far spegnere mai lo schermo durante preparazione, meditazione e tempo extra
     DisposableEffect(keepScreenAwake, lifecycleOwner) {
@@ -771,108 +453,69 @@ fun MeditationTimerScreen(
         }
     }
 
-    LaunchedEffect(selectedTimeInSeconds) {
-        if (!isTimerRunning && sessionStartTime == null && !isOvertime) {
-            activeSessionPlannedSeconds = selectedTimeInSeconds
-            timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
-            isOvertime = false
-            overtimeSeconds = 0
-        }
+    val requestNotifications: (String) -> Unit = { permission ->
+        notificationPermissionLauncher.launch(permission)
     }
 
-    val isInitialState = !isTimerRunning && !isOvertime && sessionStartTime == null
-
-    fun syncIdleDurationForPreset(targetPreset: MeditationPreset?) {
-        if (!isInitialState) return
-        val targetTime = targetPreset?.durationSeconds ?: getSavedSelectedTime(context)
-        if (targetTime > 0) {
-            lastTimedSeconds = targetTime
-        }
-        selectedTimeInSeconds = targetTime
-        activeSessionPlannedSeconds = targetTime
-        timeLeftInSeconds = if (targetTime == -1) 0 else targetTime
-        isOvertime = false
-        overtimeSeconds = 0
-        sessionStartTime = null
-        if (!StillTimerService.isRunning && !StillTimerService.timerState.value.isPaused) {
-            StillTimerService.resetState(targetTime)
-        }
-    }
-
-    fun applyPresetSelection(presetId: String?) {
-        activePresetId = presetId
-        saveActivePresetId(context, presetId)
-        syncIdleDurationForPreset(presets.firstOrNull { it.id == presetId })
-    }
-
-    fun resetTimerState() {
-        cancelGongVibration(context)
-        if (StillTimerService.isRunning) {
-            val stopIntent = Intent(context, StillTimerService::class.java).apply {
-                action = "STOP"
-            }
-            context.startService(stopIntent)
-        } else {
-            StillTimerService.resetState(selectedTimeInSeconds)
-        }
-        isTimerRunning = false
-        hasStartedFromUi = false
-        isPreparing = false
-        prepTimeLeftSeconds = 0
-        isOvertime = false
-        overtimeSeconds = 0
-        hideTimerNumbers = false
-        activeSessionPlannedSeconds = selectedTimeInSeconds
-        timeLeftInSeconds = if (selectedTimeInSeconds == -1) 0 else selectedTimeInSeconds
-        sessionStartTime = null
-    }
-
-    val toastResyncDone = stringResource(R.string.toast_health_resync_done)
-
-    fun saveAndFinishSession(includeExtra: Boolean) {
-        val plannedSec = if (activeSessionPlannedSeconds > 0) {
-            if (isOvertime) activeSessionPlannedSeconds else (activeSessionPlannedSeconds - timeLeftInSeconds).coerceAtLeast(0)
-        } else {
-            timeLeftInSeconds
-        }
-        val totalSec = if (includeExtra && isOvertime) (plannedSec + overtimeSeconds) else plannedSec
-        val end = Instant.now()
-        val start = end.minusSeconds(totalSec.toLong())
-
-        if (totalSec >= 10) {
-            addSessionToLocalHistory(appContext, totalSec, start, end)
-            sessionHistoryList = getLocalSessionHistory(appContext)
-            savePendingWatchSession(appContext, totalSec, start, end)
-
-            val savedStartEpochSec = start.epochSecond
-            val savedEndEpochSec = end.epochSecond
-            CoroutineScope(Dispatchers.IO).launch {
-                syncPendingSessionsToHealthConnect(appContext, healthConnectManager)
-                val stillPending = getPendingWatchSessions(appContext).any {
-                    it.startEpochSec == savedStartEpochSec && it.endEpochSec == savedEndEpochSec
-                }
-                withContext(Dispatchers.Main) {
-                    if (!stillPending) {
-                        Toast.makeText(
-                            appContext,
-                            appContext.getString(R.string.toast_session_saved_health, totalSec),
-                            Toast.LENGTH_LONG
-                        ).show()
-                    } else {
-                        Toast.makeText(
-                            appContext,
-                            appContext.getString(R.string.toast_session_saved_history, totalSec),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+    val centerStageActions = remember(stateHolder, notificationPermissionLauncher) {
+        StillTimerCenterStageActions(
+            onToggleHideTimerNumbers = stateHolder::toggleHideTimerNumbers,
+            onStartTimer = {
+                if (!stateHolder.isTimerRunning) {
+                    stateHolder.startOrResumeTimer(requestNotifications)
                 }
             }
-        }
-
-        resetTimerState()
+        )
     }
 
-    val isCompactHeight = LocalConfiguration.current.screenHeightDp < 640
+    val bottomControlsActions = remember(stateHolder, notificationPermissionLauncher) {
+        StillBottomControlsActions(
+            onUpdateTimeSelection = stateHolder::updateTimeSelection,
+            onAdjustActiveTimer = stateHolder::adjustActiveTimer,
+            onToggleTimer = {
+                if (!stateHolder.isTimerRunning) {
+                    stateHolder.startOrResumeTimer(requestNotifications)
+                } else {
+                    stateHolder.pauseActiveTimer()
+                }
+            },
+            onResetTimer = stateHolder::resetTimerState,
+            onSaveAndFinish = stateHolder::saveAndFinishSession
+        )
+    }
+
+    val settingsActions = remember(
+        stateHolder,
+        onPaletteSelected,
+        requestPermissionLauncher,
+        pickCustomAudioLauncher
+    ) {
+        StillSettingsActions(
+            onPrepTimeChange = stateHolder::updatePrepTime,
+            onIntervalMinsChange = stateHolder::updateIntervalMins,
+            onGongFreqChange = stateHolder::updateGongFreq,
+            onIntervalGongFreqChange = stateHolder::updateIntervalGongFreq,
+            onGongVolumeChange = stateHolder::updateGongVolume,
+            onAlertModeChange = stateHolder::updateAlertMode,
+            onTimerStyleChange = stateHolder::updateTimerStyle,
+            onPaletteSelected = onPaletteSelected,
+            onAutoDndChange = stateHolder::updateAutoDnd,
+            onResyncHealth = stateHolder::resyncHealth,
+            onConnectHealth = {
+                stateHolder.connectToHealth { permissions ->
+                    requestPermissionLauncher.launch(permissions)
+                }
+            },
+            onDismiss = { stateHolder.showSettingsDialog = false },
+            onAmbientSoundscapeChange = stateHolder::updateAmbientSoundscape,
+            onAmbientVolumeChange = stateHolder::updateAmbientVolume,
+            onPickCustomAudio = {
+                pickCustomAudioLauncher.launch(arrayOf("audio/mpeg", "audio/ogg", "application/ogg"))
+            },
+            onOpenPresetManager = { stateHolder.showPresetManagerDialog = true },
+            onOpenReminderSettings = { stateHolder.showReminderDialog = true }
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -880,9 +523,9 @@ fun MeditationTimerScreen(
             .then(if (keepScreenAwake) Modifier.keepScreenOn() else Modifier)
     ) {
         StillAtmosphericBackground(
-            isTimerRunning = isTimerRunning,
-            isPreparing = isPreparing,
-            isOvertime = isOvertime
+            isTimerRunning = stateHolder.isTimerRunning,
+            isPreparing = stateHolder.isPreparing,
+            isOvertime = stateHolder.isOvertime
         )
         Column(
             modifier = modifier
@@ -892,264 +535,122 @@ fun MeditationTimerScreen(
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             StillTopBar(
-                isPreparing = isPreparing,
-                isOvertime = isOvertime,
-                selectedTimeInSeconds = selectedTimeInSeconds,
-                onOpenSettings = { showSettingsDialog = true },
-                onOpenStats = {
-                    sessionHistoryList = getLocalSessionHistory(context)
-                    coroutineScope.launch {
-                        syncPendingSessionsToHealthConnect(context, healthConnectManager)
-                    }
-                    showStatsDialog = true
-                },
-                onOpenPrivacy = { showPrivacyDialog = true },
-                onOpenPresets = { showPresetPickerDialog = true },
-                activePresetName = activePreset?.name,
-                canSelectPreset = isInitialState
+                isPreparing = stateHolder.isPreparing,
+                isOvertime = stateHolder.isOvertime,
+                selectedTimeInSeconds = stateHolder.selectedTimeInSeconds,
+                onOpenSettings = { stateHolder.showSettingsDialog = true },
+                onOpenStats = stateHolder::openStats,
+                onOpenPrivacy = { stateHolder.showPrivacyDialog = true },
+                onOpenGuide = { stateHolder.showGuideDialog = true },
+                onOpenPresets = { stateHolder.showPresetPickerDialog = true },
+                activePresetName = stateHolder.activePreset?.name,
+                canSelectPreset = stateHolder.isInitialState
             )
 
             StillTimerCenterStage(
-                isTimerRunning = isTimerRunning,
-                isPreparing = isPreparing,
-                isOvertime = isOvertime,
-                isInitialState = isInitialState,
-                timerStyle = effectiveTimerStyle,
-                selectedTimeInSeconds = selectedTimeInSeconds,
-                activeSessionPlannedSeconds = activeSessionPlannedSeconds,
-                timeLeftInSeconds = timeLeftInSeconds,
-                prepTimeLeftSeconds = prepTimeLeftSeconds,
-                overtimeSeconds = overtimeSeconds,
-                progress = progress,
-                hideTimerNumbers = hideTimerNumbers,
-                isCompactHeight = isCompactHeight,
-                onToggleHideTimerNumbers = {
-                    if (isTimerRunning || isOvertime) {
-                        hideTimerNumbers = !hideTimerNumbers
-                    }
-                },
-                onStartTimer = {
-                    if (!isTimerRunning) {
-                        startOrResumeTimer()
-                    }
-                },
+                uiState = StillTimerCenterStageUiState(
+                    isTimerRunning = stateHolder.isTimerRunning,
+                    isPreparing = stateHolder.isPreparing,
+                    isOvertime = stateHolder.isOvertime,
+                    isInitialState = stateHolder.isInitialState,
+                    timerStyle = stateHolder.effectiveTimerStyle,
+                    selectedTimeInSeconds = stateHolder.selectedTimeInSeconds,
+                    activeSessionPlannedSeconds = stateHolder.activeSessionPlannedSeconds,
+                    timeLeftInSeconds = stateHolder.timeLeftInSeconds,
+                    prepTimeLeftSeconds = stateHolder.prepTimeLeftSeconds,
+                    overtimeSeconds = stateHolder.overtimeSeconds,
+                    progress = stateHolder.progress,
+                    hideTimerNumbers = stateHolder.hideTimerNumbers,
+                    isCompactHeight = isCompactHeight
+                ),
+                actions = centerStageActions,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             )
 
             StillBottomControls(
-                isInitialState = isInitialState,
-                isTimerRunning = isTimerRunning,
-                isPreparing = isPreparing,
-                isOvertime = isOvertime,
-                selectedTimeInSeconds = selectedTimeInSeconds,
-                activeSessionPlannedSeconds = activeSessionPlannedSeconds,
-                lastTimedSeconds = lastTimedSeconds,
-                timeLeftInSeconds = timeLeftInSeconds,
-                overtimeSeconds = overtimeSeconds,
-                isCompactHeight = isCompactHeight,
-                onUpdateTimeSelection = { updateTimeSelection(it) },
-                onAdjustActiveTimer = { adjustActiveTimer(it) },
-                onToggleTimer = {
-                    if (!isTimerRunning) {
-                        startOrResumeTimer()
-                    } else {
-                        pauseActiveTimer()
-                    }
-                },
-                onResetTimer = { resetTimerState() },
-                onSaveAndFinish = { includeExtra -> saveAndFinishSession(includeExtra = includeExtra) }
+                uiState = StillBottomControlsUiState(
+                    isInitialState = stateHolder.isInitialState,
+                    isTimerRunning = stateHolder.isTimerRunning,
+                    isPreparing = stateHolder.isPreparing,
+                    isOvertime = stateHolder.isOvertime,
+                    selectedTimeInSeconds = stateHolder.selectedTimeInSeconds,
+                    activeSessionPlannedSeconds = stateHolder.activeSessionPlannedSeconds,
+                    lastTimedSeconds = stateHolder.lastTimedSeconds,
+                    timeLeftInSeconds = stateHolder.timeLeftInSeconds,
+                    overtimeSeconds = stateHolder.overtimeSeconds,
+                    isCompactHeight = isCompactHeight
+                ),
+                actions = bottomControlsActions
             )
         }
 
         // --- DIALOG IMPOSTAZIONI ---
-        if (showSettingsDialog) {
+        if (stateHolder.showSettingsDialog) {
             StillSettingsDialog(
-                prepTimeSeconds = prepTimeSeconds,
-                onPrepTimeChange = { secs ->
-                    prepTimeSeconds = secs
-                    savePrepTime(context, secs)
-                },
-                intervalMins = intervalMins,
-                onIntervalMinsChange = { mins ->
-                    intervalMins = mins
-                    saveIntervalMins(context, mins)
-                },
-                gongFreqHz = gongFreqHz,
-                onGongFreqChange = { freq ->
-                    gongFreqHz = freq
-                    saveGongFrequency(context, freq)
-                },
-                intervalGongFreqHz = intervalGongFreqHz,
-                onIntervalGongFreqChange = { freq ->
-                    intervalGongFreqHz = freq
-                    saveIntervalGongFrequency(context, freq)
-                },
-                gongVolumePercent = gongVolumePercent,
-                onGongVolumeChange = { vol ->
-                    gongVolumePercent = vol
-                    saveGongVolume(context, vol)
-                },
-                alertMode = alertMode,
-                onAlertModeChange = { mode ->
-                    alertMode = mode
-                    saveAlertMode(context, mode)
-                },
-                timerStyle = timerStyle,
-                onTimerStyleChange = { style ->
-                    timerStyle = style
-                    saveTimerStyle(context, style)
-                },
-                selectedPalette = selectedPalette,
-                onPaletteSelected = onPaletteSelected,
-                autoDndEnabled = autoDndEnabled,
-                onAutoDndChange = { enabled ->
-                    autoDndEnabled = enabled
-                    saveAutoDnd(context, enabled)
-                },
-                dndGranted = dndGranted,
-                isHealthConnected = isHealthConnected,
-                isResyncing = isResyncing,
-                onResyncHealth = {
-                    if (!isResyncing) {
-                        isResyncing = true
-                        coroutineScope.launch {
-                            try {
-                                val ok = resyncHistoryToHealthConnect(context, healthConnectManager)
-                                Toast.makeText(
-                                    context,
-                                    if (ok) toastResyncDone else toastHealthDeniedMsg,
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } finally {
-                                isResyncing = false
-                            }
-                        }
-                    }
-                },
-                onConnectHealth = { connectToHealth() },
-                onDismiss = { showSettingsDialog = false },
-                ambientSoundscape = ambientSoundscape,
-                onAmbientSoundscapeChange = { sound ->
-                    ambientSoundscape = sound
-                    saveAmbientSoundscape(context, sound)
-                    if (activePreset?.ambientSoundId == null) {
-                        sendAmbientUpdateToService(sound, effectiveAmbientVolumePercent, customAmbientUri)
-                    }
-                },
-                ambientVolumePercent = ambientVolumePercent,
-                onAmbientVolumeChange = { vol ->
-                    ambientVolumePercent = vol
-                    saveAmbientVolume(context, vol)
-                    if (activePreset?.ambientVolumePercent == null) {
-                        sendAmbientUpdateToService(effectiveAmbientSoundscape, vol, effectiveCustomAmbientUri)
-                    }
-                },
-                customAmbientUri = customAmbientUri,
-                customAmbientName = customAmbientName,
-                onPickCustomAudio = {
-                    pickCustomAudioLauncher.launch(arrayOf("audio/mpeg", "audio/ogg", "application/ogg"))
-                },
-                presetCount = presets.size,
-                onOpenPresetManager = { showPresetManagerDialog = true },
-                reminderSummary = formatReminderSummary(context, reminderSettings),
-                onOpenReminderSettings = { showReminderDialog = true }
+                uiState = StillSettingsUiState(
+                    prepTimeSeconds = stateHolder.prepTimeSeconds,
+                    intervalMins = stateHolder.intervalMins,
+                    gongFreqHz = stateHolder.gongFreqHz,
+                    intervalGongFreqHz = stateHolder.intervalGongFreqHz,
+                    gongVolumePercent = stateHolder.gongVolumePercent,
+                    alertMode = stateHolder.alertMode,
+                    timerStyle = stateHolder.timerStyle,
+                    selectedPalette = selectedPalette,
+                    autoDndEnabled = stateHolder.autoDndEnabled,
+                    dndGranted = stateHolder.dndGranted,
+                    isHealthConnected = stateHolder.isHealthConnected,
+                    isResyncing = stateHolder.isResyncing,
+                    ambientSoundscape = stateHolder.ambientSoundscape,
+                    ambientVolumePercent = stateHolder.ambientVolumePercent,
+                    customAmbientUri = stateHolder.customAmbientUri,
+                    customAmbientName = stateHolder.customAmbientName,
+                    presetCount = stateHolder.presets.size,
+                    reminderSummary = formatReminderSummary(context, stateHolder.reminderSettings)
+                ),
+                actions = settingsActions
             )
         }
 
         // --- DIALOG PROMEMORIA MEDITAZIONE ---
-        if (showReminderDialog) {
+        if (stateHolder.showReminderDialog) {
             StillReminderDialog(
-                settings = reminderSettings,
-                onSettingsChange = { updated ->
-                    reminderSettings = updated
-                    saveReminderSettings(context, updated)
-                    scheduleMeditationReminder(
-                        context,
-                        updated,
-                        afterTrigger = false,
-                        preserveExistingFuture = false
-                    )
-                },
-                onDismiss = { showReminderDialog = false }
+                settings = stateHolder.reminderSettings,
+                onSettingsChange = stateHolder::updateReminderSettings,
+                onDismiss = { stateHolder.showReminderDialog = false }
             )
         }
 
         // --- DIALOG SELEZIONE RAPIDA PRESET ("P") ---
-        if (showPresetPickerDialog) {
+        if (stateHolder.showPresetPickerDialog) {
             StillPresetPickerDialog(
-                presets = presets,
-                activePresetId = activePresetId,
-                onSelectPreset = { selectedId -> applyPresetSelection(selectedId) },
-                onOpenManager = { showPresetManagerDialog = true },
-                onDismiss = { showPresetPickerDialog = false }
+                presets = stateHolder.presets,
+                activePresetId = stateHolder.activePresetId,
+                onSelectPreset = stateHolder::applyPresetSelection,
+                onOpenManager = { stateHolder.showPresetManagerDialog = true },
+                onDismiss = { stateHolder.showPresetPickerDialog = false }
             )
         }
 
         // --- DIALOG GESTIONE / CREAZIONE PRESET ---
-        if (showPresetManagerDialog) {
-            val currentGlobalSnapshot = MeditationPreset(
-                name = "",
-                durationSeconds = getSavedSelectedTime(context),
-                prepSeconds = prepTimeSeconds,
-                gongFreqHz = gongFreqHz,
-                gongVolumePercent = gongVolumePercent,
-                alertMode = alertMode,
-                intervalMins = intervalMins,
-                intervalGongFreqHz = intervalGongFreqHz,
-                ambientSoundId = ambientSoundscape.id,
-                ambientVolumePercent = ambientVolumePercent,
-                customAmbientUri = if (ambientSoundscape == AmbientSoundscape.CUSTOM) customAmbientUri else null,
-                customAmbientName = if (ambientSoundscape == AmbientSoundscape.CUSTOM) customAmbientName else null,
-                timerStyle = timerStyle,
-                colorPaletteId = selectedPalette.id,
-                autoDndEnabled = autoDndEnabled
-            )
+        if (stateHolder.showPresetManagerDialog) {
             StillPresetManagerDialog(
-                presets = presets,
-                activePresetId = activePresetId,
-                currentGlobalSnapshot = currentGlobalSnapshot,
-                onSavePreset = { editedPreset ->
-                    val updated = savePreset(context, editedPreset)
-                    presets = updated
-                    if (editedPreset.id == activePresetId) {
-                        val refreshed = updated.firstOrNull { it.id == editedPreset.id }
-                        syncIdleDurationForPreset(refreshed)
-                        if (StillTimerService.isRunning && refreshed != null) {
-                            val liveSound = refreshed.effectiveAmbientSoundscape() ?: ambientSoundscape
-                            val liveVolume = refreshed.ambientVolumePercent ?: ambientVolumePercent
-                            val liveCustomUri = if (refreshed.ambientSoundId != null) {
-                                if (liveSound == AmbientSoundscape.CUSTOM) {
-                                    refreshed.customAmbientUri ?: customAmbientUri
-                                } else {
-                                    null
-                                }
-                            } else {
-                                customAmbientUri
-                            }
-                            sendAmbientUpdateToService(liveSound, liveVolume, liveCustomUri)
-                        }
-                    }
-                },
-                onDeletePreset = { deletedId ->
-                    val updated = deletePreset(context, deletedId)
-                    presets = updated
-                    if (activePresetId == deletedId) {
-                        activePresetId = null
-                        syncIdleDurationForPreset(null)
-                    }
-                },
-                onDismiss = { showPresetManagerDialog = false }
+                presets = stateHolder.presets,
+                activePresetId = stateHolder.activePresetId,
+                currentGlobalSnapshot = stateHolder.buildCurrentGlobalSnapshot(selectedPalette),
+                onSavePreset = stateHolder::saveEditedPreset,
+                onDeletePreset = stateHolder::deletePresetById,
+                onDismiss = { stateHolder.showPresetManagerDialog = false }
             )
         }
 
         // --- DIALOG STATISTICHE E CALENDARIO CON CANCELLAZIONE ---
-        if (showStatsDialog) {
+        if (stateHolder.showStatsDialog) {
             StillStatsDialog(
-                sessionHistoryList = sessionHistoryList,
-                onSelectDate = { selectedCalendarDate = it },
-                onDismiss = { showStatsDialog = false },
+                sessionHistoryList = stateHolder.sessionHistoryList,
+                onSelectDate = { stateHolder.selectedCalendarDate = it },
+                onDismiss = { stateHolder.showStatsDialog = false },
                 onExportHistory = {
                     val defaultFileName = "still-history-${LocalDate.now()}.csv"
                     exportHistoryLauncher.launch(defaultFileName)
@@ -1163,49 +664,46 @@ fun MeditationTimerScreen(
         }
 
         // --- POPUP 1: DETTAGLI MEDITAZIONI DEL GIORNO SELEZIONATO ---
-        selectedCalendarDate?.let { selectedDate ->
+        stateHolder.selectedCalendarDate?.let { selectedDate ->
             StillDayDetailDialog(
                 selectedDate = selectedDate,
-                sessionHistoryList = sessionHistoryList,
-                onRequestDeleteSession = { sessionToDelete = it },
-                onDismiss = { selectedCalendarDate = null }
+                sessionHistoryList = stateHolder.sessionHistoryList,
+                onRequestDeleteSession = { stateHolder.sessionToDelete = it },
+                onDismiss = { stateHolder.selectedCalendarDate = null }
             )
         }
 
         // --- POPUP 2: CONFERMA CANCELLAZIONE SINGOLA SESSIONE ---
-        sessionToDelete?.let { session ->
+        stateHolder.sessionToDelete?.let { session ->
             StillDeleteSessionDialog(
                 session = session,
-                onConfirmDelete = {
-                    coroutineScope.launch {
-                        healthConnectManager.deleteMeditationSession(
-                            Instant.ofEpochSecond(session.startEpochSec),
-                            Instant.ofEpochSecond(session.endEpochSec)
-                        )
-                        deleteSessionFromLocalHistory(context, session.rawString)
-                        clearPendingWatchSessions(
-                            context,
-                            getPendingWatchSessions(context)
-                                .filter {
-                                    it.startEpochSec == session.startEpochSec &&
-                                        it.endEpochSec == session.endEpochSec
-                                }
-                                .map { it.rawString }
-                        )
-                        sessionHistoryList = getLocalSessionHistory(appContext)
-                        sessionToDelete = null
-                        Toast.makeText(appContext, appContext.getString(R.string.toast_session_deleted), Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onDismiss = { sessionToDelete = null }
+                onConfirmDelete = { stateHolder.deleteLoggedSession(session) },
+                onDismiss = { stateHolder.sessionToDelete = null }
+            )
+        }
+
+        // --- DIALOG GUIDA OFFLINE ("?") ---
+        if (stateHolder.showGuideDialog) {
+            StillGuideDialog(
+                onDismiss = { stateHolder.showGuideDialog = false }
+            )
+        }
+
+        // --- DIALOG NOVITÀ (UNA SOLA VOLTA PER VERSIONE) ---
+        if (stateHolder.showWhatsNewDialog) {
+            StillWhatsNewDialog(
+                onDismiss = {
+                    saveLastSeenVersionCode(context, BuildConfig.VERSION_CODE)
+                    stateHolder.showWhatsNewDialog = false
+                }
             )
         }
 
         // --- DIALOG INFORMATIVA PRIVACY & SALUTE (Health Connect Rationale) ---
-        if (showPrivacyDialog) {
+        if (stateHolder.showPrivacyDialog) {
             HealthPrivacyRationaleDialog(
                 onDismiss = {
-                    showPrivacyDialog = false
+                    stateHolder.showPrivacyDialog = false
                     onDismissHealthRationale()
                 }
             )
@@ -1213,15 +711,68 @@ fun MeditationTimerScreen(
     }
 }
 
-fun formatTime(totalSeconds: Int): String {
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return String.format(Locale.US, "%02d:%02d", minutes, seconds)
+@Composable
+private fun StillOpeningQuoteOverlay(
+    onDismiss: () -> Unit
+) {
+    val stillColors = LocalStillColors.current
+    val textAlpha = remember { Animatable(0f) }
+    val scrimAlpha = remember { Animatable(1f) }
+    val interactionSource = remember { MutableInteractionSource() }
+    var hasDismissed by remember { mutableStateOf(false) }
+    val dismissOnce = {
+        if (!hasDismissed) {
+            hasDismissed = true
+            onDismiss()
+        }
+    }
+
+    BackHandler(onBack = dismissOnce)
+
+    LaunchedEffect(Unit) {
+        textAlpha.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+        )
+        delay(1800L)
+        launch {
+            textAlpha.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+            )
+        }
+        scrimAlpha.animateTo(
+            targetValue = 0f,
+            animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
+        )
+        dismissOnce()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f * scrimAlpha.value))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = dismissOnce
+            )
+            .padding(horizontal = 32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = stringResource(R.string.opening_impermanence_quote),
+            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Light),
+            color = stillColors.titleColor,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.alpha(textAlpha.value)
+        )
+    }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun MeditationTimerPreview() {
+private fun MeditationTimerPreview() {
     StillTheme {
         MeditationTimerScreen()
     }

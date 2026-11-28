@@ -28,15 +28,6 @@
     <string name="settings_prep_label">Seconds to wait</string>
     <string name="settings_prep_placeholder">e.g. 10</string>
     <string name="settings_gong_sound">Tibetan Bowl / Gong Sound (Tap to preview):</string>
-    <string name="bell_name_gong">Gong</string>
-    <string name="bell_name_crystal">Crystal</string>
-    <string name="bell_name_keisu">Keisu</string>
-    <string name="bell_name_tingsha">Tingsha</string>
-    <string name="bell_name_chime">Chime</string>
-    <string name="bell_name_water_bowl">Water Bowl</string>
-    <string name="bell_name_soft_bowl">Soft Bowl</string>
-    <string name="bell_name_feather">Feather</string>
-    <string name="bell_name_soft_gong">Soft Gong</string>
     <string name="settings_gong_volume">Bell Volume:</string>
     <string name="settings_alert_mode">Alert Mode:</string>
     <string name="alert_mode_both">Both</string>
@@ -120,7 +111,8 @@
     <string name="settings_custom_audio_missing">Selected file is no longer available</string>
     <string name="toast_custom_audio_unsupported">Unsupported format: choose an .mp3 or .ogg file</string>
     <string name="toast_custom_audio_missing">Audio file not found or inaccessible. Please select it again.</string>
-    <string name="privacy_dialog_audio_credits">Built-in ambient sounds provided by Pixabay.</string>
+    <string name="privacy_dialog_audio_credits">Built-in bells and ambient sounds provided by Pixabay.</string>
+    <string name="cd_preview_bell_button">Preview bell</string>
     <string name="cd_presets_button">Meditation Presets</string>
     <string name="settings_presets_title">Meditation Presets</string>
     <string name="settings_presets_count_zero">No saved presets</string>
@@ -188,4 +180,21 @@
     <string name="reminder_notification_title">Time to pause</string>
     <string name="reminder_notification_body">Take a few quiet minutes to meditate with Still.</string>
     <string name="health_session_notes">Meditation session recorded with Still</string>
+    <string name="button_ok">OK</string>
+    <string name="opening_impermanence_quote">Remember: everything is impermanent.</string>
+    <string name="cd_settings_button">Settings</string>
+    <string name="cd_stats_button">Statistics and History</string>
+    <string name="cd_guide_button">Guide</string>
+    <string name="cd_info_button">Privacy and Health Information</string>
+    <string name="guide_dialog_title">Still Guide</string>
+    <string name="guide_section_meditate_title">How to meditate</string>
+    <string name="guide_section_meditate_body">Choose a duration, start the timer, close your eyes, and follow your natural breath; if your mind wanders, gently bring it back. Remember: everything is impermanent.</string>
+    <string name="guide_section_about_title">What is Still</string>
+    <string name="guide_section_about_body">Still is a quiet, minimalist meditation timer. It features synthesized bells and local ambient soundscapes that work completely offline, with local Wear OS sync and optional Google Health Connect logging.</string>
+    <string name="guide_section_privacy_title">Privacy at a glance</string>
+    <string name="guide_section_privacy_body">No account, no ads, and no external servers. The app requires no Internet access: your preferences, history, and sessions stay strictly local on your phone and watch.</string>
+    <string name="whats_new_dialog_title">What\'s New in Still v%1$s</string>
+    <string name="whats_new_item_1">• Contemplative fade-in quote on app launch (tap anywhere to dismiss).</string>
+    <string name="whats_new_item_2">• New offline guide accessible from the \"?\" button in the top bar.</string>
+    <string name="whats_new_item_3">• On Wear OS: On/Off heart rate toggle in settings and more reliable ongoing activity updates.</string>
 </resources>

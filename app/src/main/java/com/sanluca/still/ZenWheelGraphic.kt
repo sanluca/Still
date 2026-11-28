@@ -35,7 +35,7 @@ import kotlin.math.sin
 import kotlinx.coroutines.launch
 
 @Composable
-fun ZenWheelTimerGraphic(
+internal fun ZenWheelTimerGraphic(
     isRunning: Boolean,
     isInitialState: Boolean,
     isOvertime: Boolean,

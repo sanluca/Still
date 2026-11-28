@@ -31,7 +31,7 @@ private const val REMINDER_NOTIFICATION_ID = 1001
 private const val REMINDER_REQUEST_CODE = 1001
 private const val ACTION_MEDITATION_REMINDER = "com.sanluca.still.ACTION_MEDITATION_REMINDER"
 
-enum class ReminderFrequency(val id: String) {
+internal enum class ReminderFrequency(val id: String) {
     DAILY("daily"),
     WEEKDAYS("weekdays"),
     EVERY_2_DAYS("every_2_days"),
@@ -43,7 +43,7 @@ enum class ReminderFrequency(val id: String) {
     }
 }
 
-data class MeditationReminderSettings(
+internal data class MeditationReminderSettings(
     val enabled: Boolean = false,
     val hour: Int = 8,
     val minute: Int = 0,
@@ -55,7 +55,7 @@ data class MeditationReminderSettings(
     }
 }
 
-fun getSavedReminderSettings(context: Context): MeditationReminderSettings {
+internal fun getSavedReminderSettings(context: Context): MeditationReminderSettings {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val enabled = prefs.getBoolean(KEY_REMINDER_ENABLED, false)
     val hour = prefs.getInt(KEY_REMINDER_HOUR, 8).coerceIn(0, 23)
@@ -76,7 +76,7 @@ fun getSavedReminderSettings(context: Context): MeditationReminderSettings {
     )
 }
 
-fun saveReminderSettings(context: Context, settings: MeditationReminderSettings) {
+internal fun saveReminderSettings(context: Context, settings: MeditationReminderSettings) {
     val safeDays = settings.selectedDays.filter { it in 1..7 }.toSet()
         .ifEmpty { MeditationReminderSettings.ALL_WEEK_DAYS }
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -89,7 +89,7 @@ fun saveReminderSettings(context: Context, settings: MeditationReminderSettings)
         .apply()
 }
 
-fun ensureReminderNotificationChannel(context: Context) {
+internal fun ensureReminderNotificationChannel(context: Context) {
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
     val channel = NotificationChannel(
         REMINDER_CHANNEL_ID,
@@ -104,7 +104,7 @@ fun ensureReminderNotificationChannel(context: Context) {
     manager.createNotificationChannel(channel)
 }
 
-fun hasReminderNotificationPermission(context: Context): Boolean {
+internal fun hasReminderNotificationPermission(context: Context): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         ContextCompat.checkSelfPermission(
             context,
@@ -115,14 +115,14 @@ fun hasReminderNotificationPermission(context: Context): Boolean {
     }
 }
 
-fun areReminderNotificationsEnabled(context: Context): Boolean {
+internal fun areReminderNotificationsEnabled(context: Context): Boolean {
     val manager = context.getSystemService(NotificationManager::class.java) ?: return false
     if (!manager.areNotificationsEnabled()) return false
     val channel = manager.getNotificationChannel(REMINDER_CHANNEL_ID)
     return channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE
 }
 
-fun openReminderNotificationSettings(context: Context) {
+internal fun openReminderNotificationSettings(context: Context) {
     ensureReminderNotificationChannel(context)
     try {
         val channelIntent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
@@ -222,7 +222,7 @@ private fun buildReminderPendingIntent(context: Context, flags: Int): PendingInt
     )
 }
 
-fun cancelMeditationReminder(context: Context) {
+internal fun cancelMeditationReminder(context: Context) {
     val alarmManager = context.getSystemService(AlarmManager::class.java)
     val pendingIntent = buildReminderPendingIntent(context, PendingIntent.FLAG_NO_CREATE)
     if (pendingIntent != null) {
@@ -233,7 +233,7 @@ fun cancelMeditationReminder(context: Context) {
     prefs.edit().remove(KEY_REMINDER_NEXT_TRIGGER_MS).apply()
 }
 
-fun scheduleMeditationReminder(
+internal fun scheduleMeditationReminder(
     context: Context,
     settings: MeditationReminderSettings = getSavedReminderSettings(context),
     afterTrigger: Boolean = false,

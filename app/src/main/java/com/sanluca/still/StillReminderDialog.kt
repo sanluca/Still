@@ -54,7 +54,7 @@ import java.time.format.FormatStyle
 import java.time.format.TextStyle
 import java.util.Locale
 
-internal fun formatReminderTime(context: Context, hour: Int, minute: Int): String {
+private fun formatReminderTime(context: Context, hour: Int, minute: Int): String {
     val safeTime = LocalTime.of(hour.coerceIn(0, 23), minute.coerceIn(0, 59))
     return if (DateFormat.is24HourFormat(context)) {
         String.format(Locale.getDefault(), "%02d:%02d", safeTime.hour, safeTime.minute)
@@ -90,7 +90,7 @@ internal fun formatReminderSummary(context: Context, settings: MeditationReminde
 }
 
 @Composable
-fun StillReminderDialog(
+internal fun StillReminderDialog(
     settings: MeditationReminderSettings,
     onSettingsChange: (MeditationReminderSettings) -> Unit,
     onDismiss: () -> Unit

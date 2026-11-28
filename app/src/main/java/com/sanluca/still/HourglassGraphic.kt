@@ -36,7 +36,7 @@ import kotlin.math.sign
 import kotlinx.coroutines.launch
 
 @Composable
-fun AutumnHourglassGraphic(
+internal fun AutumnHourglassGraphic(
     topSandFraction: Float,
     isFlowing: Boolean,
     isOvertime: Boolean,
